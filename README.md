@@ -1,4 +1,4 @@
-# StudyBench V0.3.3 — PySide6 Edition
+# StudyBench — PySide6 Edition
 
 StudyBench is a simple offline English intensive-reading bench built with PySide6.
 

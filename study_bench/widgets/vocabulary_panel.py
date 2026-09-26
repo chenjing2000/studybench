@@ -24,6 +24,26 @@ ACTION_OVERLAY_WIDTH = ACTION_BUTTON_SIZE * 3 + ACTION_BUTTON_GAP * 2
 ACTION_ICON_DIR = Path(__file__).resolve().parents[1] / "resources" / "icons" / "vocabulary"
 
 
+ACTION_BUTTON_STYLE = (
+    "QToolButton {"
+    " border: none;"
+    " border-radius: " + str(ACTION_BUTTON_RADIUS) + "px;"
+    " background: transparent;"
+    " padding: 0;"
+    "}"
+    "QToolButton:hover {"
+    " background-color: #ecb0c1;"
+    "}"
+    "QToolButton:pressed {"
+    " background-color: #dfa0b2;"
+    "}"
+    "QToolButton:disabled {"
+    " border: none;"
+    " background: transparent;"
+    "}"
+)
+
+
 class _VocabularyActionButton(QToolButton):
     def __init__(self, hover_icon, parent=None):
         super().__init__(parent)
@@ -285,24 +305,7 @@ class VocabularyPanel(QWidget):
         button.setEnabled(enabled)
         if enabled:
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.setStyleSheet(
-            "QToolButton {"
-            " border: none;"
-            " border-radius: " + str(ACTION_BUTTON_RADIUS) + "px;"
-            " background: transparent;"
-            " padding: 0;"
-            "}"
-            "QToolButton:hover {"
-            " background-color: #ecb0c1;"
-            "}"
-            "QToolButton:pressed {"
-            " background-color: #dfa0b2;"
-            "}"
-            "QToolButton:disabled {"
-            " border: none;"
-            " background: transparent;"
-            "}"
-        )
+        button.setStyleSheet(ACTION_BUTTON_STYLE)
         button.clicked.connect(self._move_clicked)
         return button
 
@@ -313,20 +316,7 @@ class VocabularyPanel(QWidget):
         button.setIconSize(QSize(ACTION_ICON_SIZE, ACTION_ICON_SIZE))
         button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.setStyleSheet(
-            "QToolButton {"
-            " border: none;"
-            " border-radius: " + str(ACTION_BUTTON_RADIUS) + "px;"
-            " background: transparent;"
-            " padding: 0;"
-            "}"
-            "QToolButton:hover {"
-            " background-color: #ecb0c1;"
-            "}"
-            "QToolButton:pressed {"
-            " background-color: #dfa0b2;"
-            "}"
-        )
+        button.setStyleSheet(ACTION_BUTTON_STYLE)
         button.clicked.connect(self._delete_clicked)
         return button
 

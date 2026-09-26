@@ -123,8 +123,7 @@ def test_maple_leaf_main_icon_is_packaged_and_used():
     window_source = (PROJECT_ROOT / "study_bench" / "main_window.py").read_text(encoding="utf-8")
     assert 'maple_leaf.png' in main_source
     assert 'app.setWindowIcon(QIcon(str(icon_path)))' in main_source
-    assert 'maple_leaf.png' in window_source
-    assert 'self.setWindowIcon(QIcon(str(icon_path)))' in window_source
+    assert 'setWindowIcon' not in window_source
 
 
 def test_vocabulary_entry_actions_float_above_content_and_follow_entry_resize():
@@ -234,3 +233,43 @@ def test_production_code_avoids_unneeded_advanced_syntax():
                 problems.append(f"{path.relative_to(PROJECT_ROOT)}:Protocol")
 
     assert problems == []
+
+
+def test_fill_blank_enter_relies_on_blur_for_single_save():
+    js = (PROJECT_ROOT / "study_bench" / "web" / "passage.js").read_text(encoding="utf-8")
+    start = js.find('input.addEventListener("keydown"')
+    end = js.find('input.addEventListener("blur"', start)
+    keydown_block = js[start:end]
+    assert 'input.blur();' in keydown_block
+    assert 'bridge.saveAnswer' not in keydown_block
+
+
+def test_integrated_extractor_has_no_print_callback_or_empty_lookup_wrapper():
+    extractor = (PROJECT_ROOT / "study_bench_audio_extractor" / "extractor.py").read_text(encoding="utf-8")
+    provider = (PROJECT_ROOT / "study_bench_audio_extractor" / "mdict_provider.py").read_text(encoding="utf-8")
+    init_source = (PROJECT_ROOT / "study_bench_audio_extractor" / "__init__.py").read_text(encoding="utf-8")
+    assert "print_fn" not in extractor
+    assert "_print_file_stats" not in extractor
+    assert "def lookup_mdict" not in provider
+    assert '"lookup_mdict"' not in init_source
+
+
+def test_pytest_cache_is_disabled_for_clean_packages():
+    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert '[tool.pytest.ini_options]' in pyproject
+    assert 'addopts = "-p no:cacheprovider"' in pyproject
+
+
+def test_readme_has_no_patch_version_to_drift():
+    first_line = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8").splitlines()[0]
+    assert first_line == "# StudyBench — PySide6 Edition"
+
+
+def test_audio_spec_mentions_all_vocabulary_write_operations():
+    spec = (PROJECT_ROOT / "docs" / "Audio_Generation_V0.3_Specification.md").read_text(encoding="utf-8")
+    assert "GUI add/import/delete/move operations lock" in spec
+
+
+def test_unused_clear_all_answers_api_is_removed():
+    source = (PROJECT_ROOT / "study_bench" / "english_data.py").read_text(encoding="utf-8")
+    assert "def clear_all_answers" not in source

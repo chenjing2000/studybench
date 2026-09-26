@@ -53,9 +53,6 @@ class FileProcessStats:
 
 class RunSummary:
     def __init__(self):
-        self.files_seen = 0
-        self.files_processed = 0
-        self.files_completed = 0
         self.files_partial_or_failed = 0
         self.passage_stats = None
         self.vocabulary_stats = None

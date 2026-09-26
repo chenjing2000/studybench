@@ -24,8 +24,6 @@ def generate_current_passage_audio(
 ):
     passage_dir = Path(passage_dir)
     started = time.monotonic()
-    log_lines = []
-
     write_log_lines(
         passage_dir,
         [
@@ -45,14 +43,6 @@ def generate_current_passage_audio(
     write_log(passage_dir, "INFO", f"Wait seconds: {config['wait_seconds']}")
 
     try:
-        def record_extractor_line(line):
-            text = str(line).strip()
-            log_lines.append(text)
-            if "error:" in text.lower():
-                write_log(passage_dir, "ERROR", text)
-            else:
-                write_log(passage_dir, "INFO", text)
-
         summary = run_audio_extractor(
             root_dir=passage_dir,
             mdx_path=config["mdx_path"],
@@ -60,14 +50,13 @@ def generate_current_passage_audio(
             uk_voice=config["uk_voice"],
             us_voice=config["us_voice"],
             wait_seconds=config["wait_seconds"],
-            print_fn=record_extractor_line,
             vocabulary_lock=vocabulary_lock,
         )
 
         _write_summary(passage_dir, summary, started)
 
         if summary.files_partial_or_failed:
-            detail = _best_error(summary, log_lines)
+            detail = _best_error(summary)
             if detail:
                 message = f"Gen Audio 未完全完成：{detail}"
             else:
@@ -105,6 +94,9 @@ def _write_summary(passage_dir, summary, started):
             f"failed={passage_stats.items_failed}",
         )
 
+        for error in passage_stats.errors:
+            write_log(passage_dir, "ERROR", f"Segment audio: {error}")
+
     vocabulary_stats = summary.vocabulary_stats
     if vocabulary_stats is not None:
         mdd_audio = (
@@ -128,6 +120,9 @@ def _write_summary(passage_dir, summary, started):
             f"mdd_audio={mdd_audio}, edge_tts_audio={tts_audio}",
         )
 
+        for error in vocabulary_stats.errors:
+            write_log(passage_dir, "ERROR", f"Vocabulary audio: {error}")
+
     elapsed = time.monotonic() - started
     write_log(passage_dir, "INFO", f"Elapsed: {elapsed:.1f} s")
     if summary.files_partial_or_failed:
@@ -138,7 +133,7 @@ def _write_summary(passage_dir, summary, started):
     write_log_lines(passage_dir, ["-" * 60])
 
 
-def _best_error(summary, log_lines):
+def _best_error(summary):
     candidates = []
     for stats in (summary.passage_stats, summary.vocabulary_stats):
         if stats is None:
@@ -151,10 +146,4 @@ def _best_error(summary, log_lines):
             return error
     if candidates:
         return candidates[0]
-
-    for line in log_lines:
-        lower = line.lower()
-        if "error:" in lower:
-            position = lower.find("error:")
-            return line[position + 6:].strip()
     return ""

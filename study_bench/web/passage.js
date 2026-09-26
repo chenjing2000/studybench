@@ -360,8 +360,7 @@ function renderFillBlankQuestion(block, question, questionIndex) {
   input.type = "text";
   input.value = question.answer ? question.answer.user_answer || "" : "";
   input.addEventListener("keydown", function (event) {
-    if (event.key === "Enter" && bridge) {
-      bridge.saveAnswer(questionIndex, input.value);
+    if (event.key === "Enter") {
       input.blur();
     }
   });

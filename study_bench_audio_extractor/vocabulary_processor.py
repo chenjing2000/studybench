@@ -8,7 +8,6 @@ from .io_utils import (
     load_json,
     resolve_declared_path,
 )
-from .mdict_provider import lookup_mdict
 from .models import FileProcessStats
 
 
@@ -125,7 +124,7 @@ def process_vocabulary(
             continue
 
         try:
-            lookup = lookup_mdict(word, mdict_provider)
+            lookup = mdict_provider.lookup(word)
             stats.mdict_lookups += 1
         except Exception as exc:
             # Do NOT synthesize vocabulary audio after an infrastructure/query

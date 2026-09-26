@@ -85,7 +85,7 @@ class EnglishData:
 
     def add_word(self, passage_dir, selected_word):
         passage_dir = Path(passage_dir)
-        word_text = " ".join(str(selected_word).split()).strip()
+        word_text = self._normalize_vocabulary_word(selected_word)
         if not word_text:
             return {"ok": False, "message": "没有选中有效单词。"}
 
@@ -98,10 +98,9 @@ class EnglishData:
             )
             self._validate_vocabulary(vocabulary)
 
-            for item in vocabulary.get("words", []):
-                existing_word = str(item.get("word", "")).strip()
-                if existing_word.casefold() == word_text.casefold():
-                    return {"ok": False, "message": f"{word_text} 已经在生词栏中。"}
+            words = vocabulary.get("words", [])
+            if self._find_vocabulary_index(words, word_text) >= 0:
+                return {"ok": False, "message": f"{word_text} 已经在生词栏中。"}
 
             stem = self.audio_stem(word_text)
             entry = {
@@ -114,7 +113,7 @@ class EnglishData:
                     "us": f"audio_vocabulary/{stem}_us.mp3",
                 },
             }
-            vocabulary.setdefault("words", []).append(entry)
+            words.append(entry)
             write_json_atomic(vocabulary_path, vocabulary)
 
         return {
@@ -125,7 +124,7 @@ class EnglishData:
 
     def remove_word(self, passage_dir, word):
         passage_dir = Path(passage_dir)
-        word_text = " ".join(str(word).split()).strip()
+        word_text = self._normalize_vocabulary_word(word)
         if not word_text:
             return {"ok": False, "message": "Vocabulary word 不能为空。"}
 
@@ -138,12 +137,7 @@ class EnglishData:
             self._validate_vocabulary(vocabulary)
             words = vocabulary.get("words", [])
 
-            target_index = -1
-            for index, entry in enumerate(words):
-                existing_word = str(entry.get("word", "")).strip()
-                if existing_word.casefold() == word_text.casefold():
-                    target_index = index
-                    break
+            target_index = self._find_vocabulary_index(words, word_text)
 
             if target_index < 0:
                 return {
@@ -162,7 +156,7 @@ class EnglishData:
 
     def move_word(self, passage_dir, word, direction):
         passage_dir = Path(passage_dir)
-        word_text = " ".join(str(word).split()).strip()
+        word_text = self._normalize_vocabulary_word(word)
         if not word_text:
             return {"ok": False, "message": "Vocabulary word 不能为空。"}
         if direction not in ("up", "down"):
@@ -177,12 +171,7 @@ class EnglishData:
             self._validate_vocabulary(vocabulary)
             words = vocabulary.get("words", [])
 
-            target_index = -1
-            for index, entry in enumerate(words):
-                existing_word = str(entry.get("word", "")).strip()
-                if existing_word.casefold() == word_text.casefold():
-                    target_index = index
-                    break
+            target_index = self._find_vocabulary_index(words, word_text)
 
             if target_index < 0:
                 return {
@@ -244,18 +233,6 @@ class EnglishData:
         answer[field_name] = str(value)
         write_json_atomic(exercise_path, exercise)
 
-    def clear_all_answers(self, passage_dir):
-        passage_dir = Path(passage_dir)
-        exercise_path = passage_dir / "exercise.json"
-        exercise = read_json(exercise_path)
-        questions = self._validate_exercise(exercise)
-
-        for question in questions:
-            question["answer"]["user_answer"] = ""
-            question["answer"]["user_note"] = ""
-
-        write_json_atomic(exercise_path, exercise)
-
     def get_segment_audio_path(self, passage_dir, sid, accent):
         self._validate_accent(accent)
         passage_dir = Path(passage_dir)
@@ -295,11 +272,10 @@ class EnglishData:
         passage_dir = Path(passage_dir)
         words = self.get_vocabulary(passage_dir)
 
-        for entry in words:
-            entry_word = str(entry.get("word", "")).strip()
-            if entry_word.casefold() == str(word).strip().casefold():
-                audio = entry["audio"]
-                return passage_dir / audio[accent]
+        index = self._find_vocabulary_index(words, word)
+        if index >= 0:
+            audio = words[index]["audio"]
+            return passage_dir / audio[accent]
 
         raise ValueError(f"找不到 Vocabulary word：{word}")
 
@@ -417,7 +393,7 @@ class EnglishData:
                 raise ValueError(f"第 {paragraph_index + 1} 个 paragraph 不能为空。")
 
             paragraph = []
-            for segment_index, raw_segment in enumerate(raw_segments):
+            for raw_segment in raw_segments:
                 segment = self._parse_segment(raw_segment)
                 if segment.sid in seen_sid:
                     raise ValueError(f"存在重复 sid：{segment.sid}")
@@ -444,9 +420,7 @@ class EnglishData:
             raise ValueError("Segment 必须是 JSON object。")
 
         sid = raw_segment.get("sid")
-        sid_number = self._sid_number(sid)
-        if sid_number < 1 or sid_number > 999:
-            raise ValueError(f"非法 sid：{sid}")
+        self._sid_number(sid)
 
         text = raw_segment.get("text")
         if not isinstance(text, str) or not text:
@@ -600,6 +574,20 @@ class EnglishData:
                 if not isinstance(meaning.get("meaning", ""), str):
                     raise ValueError(f"{word} 的 meaning 文本无效。")
 
+
+    def _normalize_vocabulary_word(self, word):
+        return " ".join(str(word).split()).strip()
+
+    def _find_vocabulary_index(self, words, word):
+        target = self._normalize_vocabulary_word(word).casefold()
+        if not target:
+            return -1
+
+        for index, entry in enumerate(words):
+            existing = self._normalize_vocabulary_word(entry.get("word", ""))
+            if existing.casefold() == target:
+                return index
+        return -1
 
     def _find_segment(self, passage, sid):
         self._sid_number(sid)

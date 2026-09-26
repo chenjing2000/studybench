@@ -3,7 +3,6 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QIcon
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
@@ -57,9 +56,6 @@ class MainWindow(QMainWindow):
         self.status_timer.timeout.connect(self._show_next_queued_status)
 
         self.setWindowTitle("StudyBench")
-        icon_path = self.project_root / "study_bench" / "resources" / "icons" / "vocabulary" / "maple_leaf.png"
-        if icon_path.exists():
-            self.setWindowIcon(QIcon(str(icon_path)))
         self.resize(1200, 800)
 
         self._build_ui()

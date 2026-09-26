@@ -70,7 +70,7 @@ The integrated extractor is based on `study_bench_audio_extractor` V0.1.1, but t
 
 The GUI and extractor share one short `vocabulary_lock`.
 
-GUI add/import operations lock their read-modify-write section. The extractor does not hold the lock during dictionary lookup or Edge-TTS. It accumulates phonetic updates, then briefly locks, reloads the newest `vocabulary.json`, merges only `phonetic_uk` / `phonetic_us` into words that still exist, and atomically writes the latest structure back.
+GUI add/import/delete/move operations lock their read-modify-write section. The extractor does not hold the lock during dictionary lookup or Edge-TTS. It accumulates phonetic updates, then briefly locks, reloads the newest `vocabulary.json`, merges only `phonetic_uk` / `phonetic_us` into words that still exist, and atomically writes the latest structure back.
 
 Therefore a word added while generation is running is not lost. If it was added after the extractor scanned the file, it is intentionally left for the next `Gen Audio` run.
 

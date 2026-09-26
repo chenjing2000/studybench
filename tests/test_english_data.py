@@ -355,7 +355,7 @@ def test_import_vocabulary_rejects_changed_audio_path(data, tmp_path):
         data.import_vocabulary(passage_dir, import_path)
 
 
-def test_answer_is_saved_inside_question_and_can_be_cleared(data):
+def test_answer_is_saved_inside_question(data):
     passage_dir = sample_passage_dir(data)
 
     data.save_answer_field(passage_dir, 1, "user_answer", "B")
@@ -366,12 +366,6 @@ def test_answer_is_saved_inside_question_and_can_be_cleared(data):
     answer = exercise["questions"][1]["answer"]
     assert answer["user_answer"] == "B"
     assert answer["user_note"] == "Use the second paragraph."
-
-    data.clear_all_answers(passage_dir)
-    exercise = json.loads(exercise_path.read_text(encoding="utf-8"))
-    for question in exercise["questions"]:
-        assert question["answer"]["user_answer"] == ""
-        assert question["answer"]["user_note"] == ""
 
 
 def test_audio_paths_come_from_segment_data(data):

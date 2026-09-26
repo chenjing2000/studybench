@@ -124,7 +124,3 @@ class LazyMdictProvider:
                 self._error = error
                 raise
         return self._provider.lookup(word)
-
-
-def lookup_mdict(word, provider):
-    return provider.lookup(word)

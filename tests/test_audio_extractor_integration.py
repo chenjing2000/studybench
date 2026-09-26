@@ -114,7 +114,6 @@ def test_extractor_processes_only_current_passage_directory(tmp_path, monkeypatc
         root_dir=tmp_path,
         mdx_path=tmp_path / "unused.mdx",
         mdd_path=tmp_path / "unused.mdd",
-        print_fn=lambda message: None,
     )
 
     assert processed == [root_passage, root_vocabulary]
