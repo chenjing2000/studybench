@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Passage</title>
+  <link rel="stylesheet" href="passage.css">
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+</head>
+<body>
+  <main id="app">
+    <div id="emptyState" class="empty-state">请选择一篇 Passage。</div>
+    <div id="passagePage" class="hidden">
+      <h1 id="passageTitle"></h1>
+      <section id="passageText"></section>
+      <section id="passageControls" class="passage-controls"></section>
+      <section id="exerciseSection"></section>
+    </div>
+  </main>
+  <button id="selectionAddButton" class="selection-add hidden" type="button">+</button>
+  <script src="passage.js"></script>
+</body>
+</html>

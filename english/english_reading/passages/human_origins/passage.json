@@ -1,0 +1,30 @@
+{
+  "title": "How Did Humans Come to Earth?",
+  "next_sid": 3,
+  "paragraphs": [
+    {
+      "paragraph": [
+        {
+          "sid": "s001",
+          "text": "Human beings have always been curious about where we came from, and modern science has given us new ways to study our origins.",
+          "audio": {
+            "uk": "audio/s001_uk.mp3",
+            "us": "audio/s001_us.mp3"
+          }
+        }
+      ]
+    },
+    {
+      "paragraph": [
+        {
+          "sid": "s002",
+          "text": "Scientists compare fossils, ancient tools, and genetic evidence, then use these clues to understand how early humans developed and moved across the world.",
+          "audio": {
+            "uk": "audio/s002_uk.mp3",
+            "us": "audio/s002_us.mp3"
+          }
+        }
+      ]
+    }
+  ]
+}

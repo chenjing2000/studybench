@@ -1,0 +1,42 @@
+{
+  "questions": [
+    {
+      "type": "fill_blank",
+      "stem": "Modern science has given us new ways to study our ______.",
+      "reference_answer": "origins",
+      "explanation": "The first paragraph uses the phrase study our origins.",
+      "answer": {
+        "user_answer": "",
+        "user_note": ""
+      }
+    },
+    {
+      "type": "choice",
+      "stem": "What kinds of evidence do scientists use to study human origins?",
+      "options": [
+        {
+          "key": "A",
+          "text": "Only written records"
+        },
+        {
+          "key": "B",
+          "text": "Fossils, ancient tools, and genetic evidence"
+        },
+        {
+          "key": "C",
+          "text": "Only modern maps"
+        },
+        {
+          "key": "D",
+          "text": "Weather reports"
+        }
+      ],
+      "reference_answer": "B",
+      "explanation": "The second paragraph names fossils, ancient tools, and genetic evidence.",
+      "answer": {
+        "user_answer": "",
+        "user_note": ""
+      }
+    }
+  ]
+}

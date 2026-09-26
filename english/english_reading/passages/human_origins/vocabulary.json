@@ -1,0 +1,26 @@
+{
+  "words": [
+    {
+      "word": "origin",
+      "phonetic_uk": "/ˈɒrɪdʒɪn/",
+      "phonetic_us": "/ˈɔːrɪdʒɪn/",
+      "meanings": [
+        {
+          "pos": "n.",
+          "meaning": "起源；来源"
+        }
+      ]
+    },
+    {
+      "word": "evidence",
+      "phonetic_uk": "/ˈevɪdəns/",
+      "phonetic_us": "/ˈevɪdəns/",
+      "meanings": [
+        {
+          "pos": "n.",
+          "meaning": "证据；根据"
+        }
+      ]
+    }
+  ]
+}
