@@ -40,7 +40,7 @@ EnglishBooks/
 │       │   ├── vocabulary.json       optional
 │       │   ├── exercise.json         optional
 │       │   ├── audio/                optional
-│       │   └── vocabulary_audio/     optional
+│       │   └── audio_vocabulary/     optional
 │       └── plants_environment/
 │           └── passage.json
 └── another_book/
@@ -189,7 +189,11 @@ Book/Passage validation does not check whether MP3 files exist. Playback checks 
           "pos": "adj.",
           "meaning": "好奇的"
         }
-      ]
+      ],
+      "audio": {
+        "uk": "audio_vocabulary/curious_uk.mp3",
+        "us": "audio_vocabulary/curious_us.mp3"
+      }
     }
   ]
 }
@@ -200,9 +204,17 @@ Rules:
 - no WID or `next_wid` exists.
 - `word` is the natural identity inside one Passage.
 - words must be unique case-insensitively.
-- Vocabulary audio remains derived from the word under `vocabulary_audio/`.
+- every Vocabulary entry stores `audio.uk` and `audio.us` paths under `audio_vocabulary/`; the paths exist in JSON before the MP3 files exist.
+- Vocabulary playback reads these stored paths directly; missing/unplayable files are reported through the status bar.
 - export includes the complete file.
-- enrichment import must preserve the number, order, and exact `word` values; it may fill or update the other fields.
+- Vocabulary import validates the incoming current-schema file and then replaces the existing `vocabulary.json` completely; the imported file determines entry count, order, additions, deletions, and modifications. Every imported entry must still satisfy StudyBench word uniqueness and deterministic `audio.uk` / `audio.us` path rules.
+- each right-panel Vocabulary entry has three 16×16 rounded SVG action buttons in a floating overlay at the far right, vertically centered across the whole entry, with 5 px between buttons. The SVG files live under `study_bench/resources/icons/vocabulary/`, use `#70695d` rounded strokes, and are hidden until the pointer hovers the individual enabled button. The hovered button uses a borderless `#ecb0c1` background with a 5 px radius. Because the overlay is not in the entry layout, it reserves no horizontal layout space and follows the entry right edge as the panel is resized.
+- the first Vocabulary entry disables `↑`; the last disables `↓`; if only one entry exists, both move controls are disabled. Moving changes only `words[]` order by swapping the selected entry with its immediate neighbor.
+- clicking `×` deletes the entry immediately with no confirmation dialog, tooltip, or Undo. Deleting updates the right panel and Passage Vocabulary highlights immediately, but does not delete already existing files under `audio_vocabulary/`.
+- deleting the final Vocabulary entry preserves `vocabulary.json` as `{"words": []}`.
+- right-panel Vocabulary entry blocks use alternating `#FFFFFF` and `#F5F6F2` backgrounds, with no extra spacer rows between entries. Reordering recalculates the alternating backgrounds from the new positions.
+- the Vocabulary headword occupies the first line. UK and US phonetics occupy a second line with their existing speaker controls. Phonetics are one point smaller than the base entry font, and meaning rows use the same detail font size as the phonetics.
+- Vocabulary add/import/delete/move operations share the same short write lock used by `Gen Audio`, so user edits and ordering are preserved against later extractor merges.
 
 A missing or malformed optional Vocabulary file does not invalidate the core Passage. Malformed optional data is reported through the status bar.
 
@@ -215,7 +227,7 @@ A missing or malformed optional Vocabulary file does not invalidate the core Pas
   "questions": [
     {
       "type": "choice",
-      "stem": "Which statement is correct?",
+      "prompt": "Which statement is correct?",
       "options": [
         {"key": "A", "text": "..."},
         {"key": "B", "text": "..."}

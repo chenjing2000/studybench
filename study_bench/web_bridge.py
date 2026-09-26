@@ -3,6 +3,7 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 class WebBridge(QObject):
     vocabulary_changed = Signal()
+    gen_audio_requested = Signal()
     message = Signal(str)
 
     def __init__(self, english_data, audio_player, parent=None):
@@ -69,6 +70,13 @@ class WebBridge(QObject):
     @Slot()
     def stopAudio(self):
         self.audio_player.stop()
+
+    @Slot()
+    def genAudio(self):
+        if not self._has_passage():
+            self.message.emit("当前没有打开 Passage。")
+            return
+        self.gen_audio_requested.emit()
 
     @Slot(str)
     def addWord(self, word):

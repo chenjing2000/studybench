@@ -9,7 +9,11 @@
           "pos": "n.",
           "meaning": "起源；来源"
         }
-      ]
+      ],
+      "audio": {
+        "uk": "audio_vocabulary/origin_uk.mp3",
+        "us": "audio_vocabulary/origin_us.mp3"
+      }
     },
     {
       "word": "evidence",
@@ -20,7 +24,11 @@
           "pos": "n.",
           "meaning": "证据；根据"
         }
-      ]
+      ],
+      "audio": {
+        "uk": "audio_vocabulary/evidence_uk.mp3",
+        "us": "audio_vocabulary/evidence_us.mp3"
+      }
     }
   ]
 }

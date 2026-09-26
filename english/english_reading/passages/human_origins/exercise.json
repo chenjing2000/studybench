@@ -2,7 +2,7 @@
   "questions": [
     {
       "type": "fill_blank",
-      "stem": "Modern science has given us new ways to study our ______.",
+      "prompt": "Modern science has given us new ways to study our ______.",
       "reference_answer": "origins",
       "explanation": "The first paragraph uses the phrase study our origins.",
       "answer": {
@@ -12,7 +12,7 @@
     },
     {
       "type": "choice",
-      "stem": "What kinds of evidence do scientists use to study human origins?",
+      "prompt": "What kinds of evidence do scientists use to study human origins?",
       "options": [
         {
           "key": "A",

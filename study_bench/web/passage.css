@@ -120,16 +120,17 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  height: 34px;
   border: 1px solid #c9c9c9;
   background: #ffffff;
   border-radius: 8px;
-  padding: 5px 10px;
-  min-height: 40px;
+  padding: 3px 10px;
   cursor: pointer;
   font-family: inherit;
-  font-size: 1rem;
-  font-weight: 400;
-  line-height: 1.4;
+  font-size: 11pt;
+  font-weight: 700;
+  line-height: 1;
+  color: #dd7694;
   vertical-align: middle;
   white-space: nowrap;
 }
@@ -163,7 +164,7 @@ body {
   border-bottom: 0;
 }
 
-.question-stem {
+.question-prompt {
   margin: 0 0 6pt 0;
   line-height: 1.6;
 }
@@ -240,4 +241,10 @@ body {
   line-height: 19px;
   cursor: pointer;
   box-shadow: 0 2px 7px rgba(0, 0, 0, 0.24);
+}
+
+.control-button:disabled,
+.accent-button:disabled {
+  cursor: default;
+  opacity: 0.55;
 }

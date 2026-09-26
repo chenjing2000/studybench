@@ -103,6 +103,10 @@ def test_add_word_has_no_wid_and_creates_missing_file(data):
             "phonetic_uk": "",
             "phonetic_us": "",
             "meanings": [],
+            "audio": {
+                "uk": "audio_vocabulary/developed_uk.mp3",
+                "us": "audio_vocabulary/developed_us.mp3",
+            },
         }
     ]
 
@@ -115,11 +119,231 @@ def test_duplicate_word_is_not_added(data):
     assert len(data.get_vocabulary(passage_dir)) == 2
 
 
-def test_import_vocabulary_requires_same_word_order(data, tmp_path):
+def test_remove_word_is_case_insensitive_and_preserves_remaining_order(data):
+    passage_dir = sample_passage_dir(data)
+    data.add_word(passage_dir, "commute")
+
+    result = data.remove_word(passage_dir, "Evidence")
+
+    assert result == {
+        "ok": True,
+        "word": "evidence",
+        "remaining_count": 2,
+    }
+    words = data.get_vocabulary(passage_dir)
+    assert [entry["word"] for entry in words] == ["origin", "commute"]
+
+
+def test_remove_last_word_keeps_empty_vocabulary_file(data):
+    passage_dir = sample_passage_dir(data)
+
+    data.remove_word(passage_dir, "origin")
+    result = data.remove_word(passage_dir, "evidence")
+
+    assert result["ok"] is True
+    assert result["remaining_count"] == 0
+    stored = json.loads(
+        (passage_dir / "vocabulary.json").read_text(encoding="utf-8")
+    )
+    assert stored == {"words": []}
+    assert data.get_vocabulary(passage_dir) == []
+
+
+def test_remove_missing_word_does_not_rewrite_vocabulary(data):
+    passage_dir = sample_passage_dir(data)
+    vocabulary_path = passage_dir / "vocabulary.json"
+    before = vocabulary_path.read_bytes()
+
+    result = data.remove_word(passage_dir, "commute")
+
+    assert result["ok"] is False
+    assert vocabulary_path.read_bytes() == before
+
+
+def test_remove_word_does_not_delete_audio_files(data):
+    passage_dir = sample_passage_dir(data)
+    audio_dir = passage_dir / "audio_vocabulary"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    uk_path = audio_dir / "origin_uk.mp3"
+    us_path = audio_dir / "origin_us.mp3"
+    uk_path.write_bytes(b"uk")
+    us_path.write_bytes(b"us")
+
+    result = data.remove_word(passage_dir, "origin")
+
+    assert result["ok"] is True
+    assert uk_path.read_bytes() == b"uk"
+    assert us_path.read_bytes() == b"us"
+
+
+def test_remove_word_does_not_create_missing_vocabulary_file(data):
+    passage_dir = sample_passage_dir(data)
+    vocabulary_path = passage_dir / "vocabulary.json"
+    vocabulary_path.unlink()
+
+    with pytest.raises(ValueError, match="vocabulary.json 不存在"):
+        data.remove_word(passage_dir, "origin")
+
+    assert not vocabulary_path.exists()
+
+
+def test_move_word_up_is_case_insensitive_and_preserves_entry_data(data):
+    passage_dir = sample_passage_dir(data)
+    before = data.get_vocabulary(passage_dir)
+    evidence_before = json.loads(json.dumps(before[1]))
+
+    result = data.move_word(passage_dir, "Evidence", "up")
+
+    assert result == {
+        "ok": True,
+        "word": "evidence",
+        "old_index": 1,
+        "new_index": 0,
+        "total_count": 2,
+    }
+    words = data.get_vocabulary(passage_dir)
+    assert [entry["word"] for entry in words] == ["evidence", "origin"]
+    assert words[0] == evidence_before
+
+
+def test_move_word_down_swaps_only_adjacent_entries(data):
+    passage_dir = sample_passage_dir(data)
+    data.add_word(passage_dir, "commute")
+    before = data.get_vocabulary(passage_dir)
+    origin_before = json.loads(json.dumps(before[0]))
+    evidence_before = json.loads(json.dumps(before[1]))
+    commute_before = json.loads(json.dumps(before[2]))
+
+    result = data.move_word(passage_dir, "evidence", "down")
+
+    assert result["ok"] is True
+    assert result["old_index"] == 1
+    assert result["new_index"] == 2
+    words = data.get_vocabulary(passage_dir)
+    assert words == [origin_before, commute_before, evidence_before]
+
+
+def test_move_word_at_boundaries_is_no_op_without_rewrite(data):
+    passage_dir = sample_passage_dir(data)
+    vocabulary_path = passage_dir / "vocabulary.json"
+    before = vocabulary_path.read_bytes()
+
+    first_result = data.move_word(passage_dir, "origin", "up")
+    assert first_result["ok"] is False
+    assert vocabulary_path.read_bytes() == before
+
+    last_result = data.move_word(passage_dir, "evidence", "down")
+    assert last_result["ok"] is False
+    assert vocabulary_path.read_bytes() == before
+
+
+def test_move_only_word_is_no_op(data):
+    passage_dir = sample_passage_dir(data)
+    data.remove_word(passage_dir, "evidence")
+    vocabulary_path = passage_dir / "vocabulary.json"
+    before = vocabulary_path.read_bytes()
+
+    assert data.move_word(passage_dir, "origin", "up")["ok"] is False
+    assert data.move_word(passage_dir, "origin", "down")["ok"] is False
+    assert vocabulary_path.read_bytes() == before
+
+
+def test_move_word_does_not_touch_audio_files(data):
+    passage_dir = sample_passage_dir(data)
+    audio_dir = passage_dir / "audio_vocabulary"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    uk_path = audio_dir / "evidence_uk.mp3"
+    us_path = audio_dir / "evidence_us.mp3"
+    uk_path.write_bytes(b"uk")
+    us_path.write_bytes(b"us")
+
+    result = data.move_word(passage_dir, "evidence", "up")
+
+    assert result["ok"] is True
+    assert uk_path.read_bytes() == b"uk"
+    assert us_path.read_bytes() == b"us"
+
+
+def test_move_word_rejects_unknown_direction(data):
+    passage_dir = sample_passage_dir(data)
+
+    with pytest.raises(ValueError, match="移动方向"):
+        data.move_word(passage_dir, "origin", "sideways")
+
+
+def test_import_vocabulary_replaces_words_order_and_content(data, tmp_path):
+    passage_dir = sample_passage_dir(data)
+    incoming = {
+        "words": [
+            {
+                "word": "result in",
+                "phonetic_uk": "",
+                "phonetic_us": "",
+                "meanings": [
+                    {"pos": "phrase", "meaning": "导致；造成"}
+                ],
+                "audio": {
+                    "uk": "audio_vocabulary/result_in_uk.mp3",
+                    "us": "audio_vocabulary/result_in_us.mp3",
+                },
+            },
+            {
+                "word": "evidence",
+                "phonetic_uk": "/changed-uk/",
+                "phonetic_us": "/changed-us/",
+                "meanings": [
+                    {"pos": "n.", "meaning": "证据；迹象"}
+                ],
+                "audio": {
+                    "uk": "audio_vocabulary/evidence_uk.mp3",
+                    "us": "audio_vocabulary/evidence_us.mp3",
+                },
+            },
+        ]
+    }
+
+    import_path = tmp_path / "import.json"
+    import_path.write_text(
+        json.dumps(incoming, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    data.import_vocabulary(passage_dir, import_path)
+
+    stored = json.loads(
+        (passage_dir / "vocabulary.json").read_text(encoding="utf-8")
+    )
+    assert stored == incoming
+    assert [entry["word"] for entry in stored["words"]] == [
+        "result in",
+        "evidence",
+    ]
+
+
+def test_exercise_uses_prompt_field(data):
+    passage_dir = sample_passage_dir(data)
+    payload, warnings = data.load_passage_payload(passage_dir)
+
+    assert warnings == []
+    assert payload["questions"][0]["prompt"] == (
+        "Modern science has given us new ways to study our ______."
+    )
+    assert "stem" not in payload["questions"][0]
+
+
+def test_vocabulary_audio_path_comes_from_entry(data):
+    passage_dir = sample_passage_dir(data)
+
+    path = data.get_vocabulary_audio_path(passage_dir, "Origin", "uk")
+
+    assert path == passage_dir / "audio_vocabulary" / "origin_uk.mp3"
+
+
+def test_import_vocabulary_rejects_changed_audio_path(data, tmp_path):
     passage_dir = sample_passage_dir(data)
     source = passage_dir / "vocabulary.json"
     incoming = json.loads(source.read_text(encoding="utf-8"))
-    incoming["words"].reverse()
+    incoming["words"][0]["audio"]["uk"] = "audio_vocabulary/changed_uk.mp3"
 
     import_path = tmp_path / "import.json"
     import_path.write_text(

@@ -3,6 +3,7 @@ let currentAccent = "uk";
 let selectedText = "";
 let vocabularyWords = [];
 let vocabularyHighlightsVisible = false;
+let genAudioEnabled = true;
 
 const addButton = document.getElementById("selectionAddButton");
 
@@ -45,6 +46,14 @@ window.setVocabularyWords = function (words, visible) {
 window.setVocabularyHighlightsVisible = function (visible) {
   vocabularyHighlightsVisible = Boolean(visible);
   applyVocabularyHighlights();
+};
+
+window.setGenAudioEnabled = function (enabled) {
+  genAudioEnabled = Boolean(enabled);
+  const button = document.getElementById("genAudioButton");
+  if (button) {
+    button.disabled = !genAudioEnabled;
+  }
 };
 
 window.updateAudioState = function (state, owner) {
@@ -218,6 +227,18 @@ function renderPassageControls() {
   const controls = document.getElementById("passageControls");
   controls.replaceChildren();
 
+  const genAudioButton = document.createElement("button");
+  genAudioButton.id = "genAudioButton";
+  genAudioButton.type = "button";
+  genAudioButton.className = "control-button";
+  genAudioButton.textContent = "Gen Audio";
+  genAudioButton.disabled = !genAudioEnabled;
+  genAudioButton.addEventListener("click", function () {
+    if (bridge && genAudioEnabled) {
+      bridge.genAudio();
+    }
+  });
+
   const accentButton = document.createElement("button");
   accentButton.type = "button";
   accentButton.className = "accent-button";
@@ -252,6 +273,7 @@ function renderPassageControls() {
     }
   });
 
+  controls.appendChild(genAudioButton);
   controls.appendChild(accentButton);
   controls.appendChild(playButton);
   controls.appendChild(stopButton);
@@ -288,10 +310,10 @@ function renderExercises(questions) {
 }
 
 function renderChoiceQuestion(block, question, questionIndex) {
-  const stem = document.createElement("p");
-  stem.className = "question-stem";
-  stem.textContent = String(questionIndex + 1) + ". " + question.stem;
-  block.appendChild(stem);
+  const prompt = document.createElement("p");
+  prompt.className = "question-prompt";
+  prompt.textContent = String(questionIndex + 1) + ". " + question.prompt;
+  block.appendChild(prompt);
 
   const options = document.createElement("div");
   options.className = "question-options";
@@ -324,14 +346,14 @@ function renderChoiceQuestion(block, question, questionIndex) {
 }
 
 function renderFillBlankQuestion(block, question, questionIndex) {
-  const stem = document.createElement("p");
-  stem.className = "question-stem";
+  const prompt = document.createElement("p");
+  prompt.className = "question-prompt";
 
   const prefix = document.createTextNode(String(questionIndex + 1) + ". ");
-  stem.appendChild(prefix);
+  prompt.appendChild(prefix);
 
-  const pieces = question.stem.split("______");
-  stem.appendChild(document.createTextNode(pieces[0]));
+  const pieces = question.prompt.split("______");
+  prompt.appendChild(document.createTextNode(pieces[0]));
 
   const input = document.createElement("input");
   input.className = "fill-input";
@@ -348,10 +370,10 @@ function renderFillBlankQuestion(block, question, questionIndex) {
       bridge.saveAnswer(questionIndex, input.value);
     }
   });
-  stem.appendChild(input);
-  stem.appendChild(document.createTextNode(pieces[1]));
+  prompt.appendChild(input);
+  prompt.appendChild(document.createTextNode(pieces[1]));
 
-  block.appendChild(stem);
+  block.appendChild(prompt);
 }
 
 function renderAnswerInfo(block, question) {

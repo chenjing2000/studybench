@@ -1,0 +1,23 @@
+{
+  "mdx_path": "",
+
+  "mdd_path": "",
+
+  "uk_voice": "en-GB-SoniaNeural",
+
+  "uk_voice_options": [
+    "en-GB-SoniaNeural",
+    "en-GB-LibbyNeural",
+    "en-GB-RyanNeural"
+  ],
+
+  "us_voice": "en-US-JennyNeural",
+
+  "us_voice_options": [
+    "en-US-JennyNeural",
+    "en-US-AriaNeural",
+    "en-US-GuyNeural"
+  ],
+
+  "wait_seconds": 2
+}

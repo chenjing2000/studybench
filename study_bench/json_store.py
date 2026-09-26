@@ -49,3 +49,29 @@ def write_json_atomic(path, data):
     finally:
         if temp_name and os.path.exists(temp_name):
             os.remove(temp_name)
+
+
+def write_text_atomic(path, text):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    temp_name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=path.parent,
+            prefix=path.name + ".",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_name = temp_file.name
+            temp_file.write(text)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+
+        os.replace(temp_name, path)
+    finally:
+        if temp_name and os.path.exists(temp_name):
+            os.remove(temp_name)
