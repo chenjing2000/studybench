@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from study_bench.english_data import EnglishData
+from studybench.english_data import DEFAULT_USER_FOLDER, DEFAULT_USERNAME, EnglishData
 
 
 SOURCE_LIBRARY = Path(__file__).resolve().parent.parent / "english"
@@ -355,17 +355,225 @@ def test_import_vocabulary_rejects_changed_audio_path(data, tmp_path):
         data.import_vocabulary(passage_dir, import_path)
 
 
-def test_answer_is_saved_inside_question(data):
+def test_answers_are_saved_in_default_user_answer_sheet(data):
     passage_dir = sample_passage_dir(data)
+    data.load_library()
 
-    data.save_answer_field(passage_dir, 1, "user_answer", "B")
-    data.save_answer_field(passage_dir, 1, "user_note", "Use the second paragraph.")
+    answers = [
+        {"user_answer": "origins", "user_note": ""},
+        {"user_answer": "B", "user_note": "Use the second paragraph."},
+    ]
+    data.save_exercise_answers(passage_dir, DEFAULT_USER_FOLDER, answers)
 
+    book_dir = data.library_root / "english_reading"
+    answer_path = book_dir / "userdata" / DEFAULT_USER_FOLDER / "answer_sheet.json"
+    answer_sheet = json.loads(answer_path.read_text(encoding="utf-8"))
+    assert answer_sheet["username"] == DEFAULT_USERNAME
+    assert answer_sheet["answers"]["human_origins"] == answers
+
+    exercise = json.loads(
+        (passage_dir / "exercise.json").read_text(encoding="utf-8")
+    )
+    for question in exercise["questions"]:
+        assert "answer" not in question
+
+
+def test_legacy_book_initializes_default_user_and_userdata(data):
+    book_dir = data.library_root / "english_reading"
+    book_path = book_dir / "book.json"
+    book = json.loads(book_path.read_text(encoding="utf-8"))
+    book.pop("userdata", None)
+    book_path.write_text(
+        json.dumps(book, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    shutil.rmtree(book_dir / "userdata")
+
+    books, errors = data.load_library()
+
+    assert errors == []
+    assert [book["bookname"] for book in books] == ["English Reading"]
+    upgraded = json.loads(book_path.read_text(encoding="utf-8"))
+    assert upgraded["userdata"] == [DEFAULT_USER_FOLDER]
+    answer_path = book_dir / "userdata" / DEFAULT_USER_FOLDER / "answer_sheet.json"
+    answer_sheet = json.loads(answer_path.read_text(encoding="utf-8"))
+    assert answer_sheet == {"username": DEFAULT_USERNAME, "answers": {}}
+
+
+def test_legacy_exercise_answer_is_removed_during_library_upgrade(data):
+    passage_dir = sample_passage_dir(data)
     exercise_path = passage_dir / "exercise.json"
     exercise = json.loads(exercise_path.read_text(encoding="utf-8"))
-    answer = exercise["questions"][1]["answer"]
-    assert answer["user_answer"] == "B"
-    assert answer["user_note"] == "Use the second paragraph."
+    exercise["questions"][0]["answer"] = {
+        "user_answer": "old",
+        "user_note": "legacy",
+    }
+    exercise_path.write_text(
+        json.dumps(exercise, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    data.load_library()
+
+    upgraded = json.loads(exercise_path.read_text(encoding="utf-8"))
+    for question in upgraded["questions"]:
+        assert "answer" not in question
+
+
+def test_username_rules_allow_unicode_space_underscore_and_plus(data):
+    book_dir = data.library_root / "english_reading"
+    data.load_library()
+
+    chen = data.validate_new_username(book_dir, "Chen Jing")
+    assert chen == {"username": "Chen Jing", "folder": "chen jing"}
+
+    chinese = data.validate_new_username(book_dir, "张三李四")
+    assert chinese == {"username": "张三李四", "folder": "张三李四"}
+
+    underscore = data.validate_new_username(book_dir, "Abcd_1234")
+    assert underscore["folder"] == "abcd_1234"
+
+    plus = data.validate_new_username(book_dir, "Abcd+1234")
+    assert plus["folder"] == "abcd+1234"
+
+
+def test_username_rules_reject_short_illegal_reserved_and_default_names(data):
+    book_dir = data.library_root / "english_reading"
+    data.load_library()
+
+    with pytest.raises(ValueError, match="有效长度不足"):
+        data.validate_new_username(book_dir, "李_四")
+    with pytest.raises(ValueError, match="非法字符"):
+        data.validate_new_username(book_dir, "Chen/Jing")
+    with pytest.raises(ValueError, match="Windows 保留"):
+        data.validate_new_username(book_dir, "CON.abcde")
+    with pytest.raises(ValueError, match="系统默认账户"):
+        data.validate_new_username(book_dir, "Default User")
+
+
+def test_register_user_uses_full_username_and_folder_collision(data):
+    book_dir = data.library_root / "english_reading"
+    data.load_library()
+
+    account = data.register_user(book_dir, "Chen Jing")
+    assert account == {"folder": "chen jing", "username": "Chen Jing"}
+
+    answer_path = book_dir / "userdata" / "chen jing" / "answer_sheet.json"
+    answer_sheet = json.loads(answer_path.read_text(encoding="utf-8"))
+    assert answer_sheet == {"username": "Chen Jing", "answers": {}}
+
+    book = json.loads((book_dir / "book.json").read_text(encoding="utf-8"))
+    assert book["userdata"] == [DEFAULT_USER_FOLDER, "chen jing"]
+
+    with pytest.raises(ValueError, match="已经存在"):
+        data.register_user(book_dir, "CHEN JING")
+
+
+def test_user_answers_are_isolated_and_other_passages_are_preserved(data):
+    book_dir = data.library_root / "english_reading"
+    passage_dir = sample_passage_dir(data)
+    data.load_library()
+    account = data.register_user(book_dir, "Chen Jing")
+
+    answer_path = book_dir / "userdata" / account["folder"] / "answer_sheet.json"
+    answer_sheet = json.loads(answer_path.read_text(encoding="utf-8"))
+    answer_sheet["answers"]["another_passage"] = [
+        {"user_answer": "old", "user_note": "keep"}
+    ]
+    answer_path.write_text(
+        json.dumps(answer_sheet, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    answers = [
+        {"user_answer": "origins", "user_note": "mine"},
+        {"user_answer": "B", "user_note": ""},
+    ]
+    data.save_exercise_answers(passage_dir, account["folder"], answers)
+
+    stored = json.loads(answer_path.read_text(encoding="utf-8"))
+    assert stored["answers"]["human_origins"] == answers
+    assert stored["answers"]["another_passage"] == [
+        {"user_answer": "old", "user_note": "keep"}
+    ]
+
+    default_path = book_dir / "userdata" / DEFAULT_USER_FOLDER / "answer_sheet.json"
+    default_sheet = json.loads(default_path.read_text(encoding="utf-8"))
+    assert "human_origins" not in default_sheet["answers"]
+
+
+def test_passage_payload_merges_current_user_answers_without_changing_exercise(data):
+    book_dir = data.library_root / "english_reading"
+    passage_dir = sample_passage_dir(data)
+    data.load_library()
+    account = data.register_user(book_dir, "Chen Jing")
+    answers = [
+        {"user_answer": "origins", "user_note": "note one"},
+        {"user_answer": "B", "user_note": "note two"},
+    ]
+    data.save_exercise_answers(passage_dir, account["folder"], answers)
+
+    payload, warnings = data.load_passage_payload(passage_dir, account["folder"])
+
+    assert warnings == []
+    assert payload["questions"][0]["answer"] == answers[0]
+    assert payload["questions"][1]["answer"] == answers[1]
+    exercise = json.loads(
+        (passage_dir / "exercise.json").read_text(encoding="utf-8")
+    )
+    for question in exercise["questions"]:
+        assert "answer" not in question
+
+
+def test_bad_userdata_field_is_repaired_without_rejecting_book(data):
+    book_dir = data.library_root / "english_reading"
+    book_path = book_dir / "book.json"
+    book = json.loads(book_path.read_text(encoding="utf-8"))
+    book["userdata"] = "broken"
+    book_path.write_text(
+        json.dumps(book, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    books, errors = data.load_library()
+
+    assert [item["bookname"] for item in books] == ["English Reading"]
+    assert len(errors) == 1
+    assert "userdata 必须是数组" in errors[0]
+    repaired = json.loads(book_path.read_text(encoding="utf-8"))
+    assert repaired["userdata"] == [DEFAULT_USER_FOLDER]
+
+
+def test_broken_default_user_does_not_reject_book_or_get_overwritten(data):
+    book_dir = data.library_root / "english_reading"
+    answer_path = book_dir / "userdata" / DEFAULT_USER_FOLDER / "answer_sheet.json"
+    answer_path.write_text('{"username": ', encoding="utf-8")
+    before = answer_path.read_bytes()
+
+    books, errors = data.load_library()
+
+    assert [item["bookname"] for item in books] == ["English Reading"]
+    assert len(errors) == 1
+    assert "Default User 初始化失败" in errors[0]
+    assert answer_path.read_bytes() == before
+
+
+def test_broken_regular_user_does_not_reject_book(data):
+    book_dir = data.library_root / "english_reading"
+    data.load_library()
+    account = data.register_user(book_dir, "Chen Jing")
+    answer_path = book_dir / "userdata" / account["folder"] / "answer_sheet.json"
+    answer_path.write_text('{"username": ', encoding="utf-8")
+
+    books, errors = data.load_library()
+    accounts, warnings = data.list_user_accounts(book_dir)
+
+    assert [book["bookname"] for book in books] == ["English Reading"]
+    assert len(errors) == 1
+    assert "chen jing" in errors[0]
+    assert [account["folder"] for account in accounts] == [DEFAULT_USER_FOLDER]
+    assert len(warnings) == 1
+    assert "chen jing" in warnings[0]
 
 
 def test_audio_paths_come_from_segment_data(data):

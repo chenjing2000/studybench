@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from study_bench.audio_config import (
+from studybench.audio_config import (
     default_audio_config,
     ensure_audio_config,
     load_audio_config_for_run,

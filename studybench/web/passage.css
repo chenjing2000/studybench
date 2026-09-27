@@ -248,3 +248,13 @@ body {
   cursor: default;
   opacity: 0.55;
 }
+
+.exercise-save-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12pt;
+}
+
+.exercise-save-button {
+  min-width: 70px;
+}

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from study_bench.run_log import log_path, write_log, write_log_lines
+from studybench.run_log import log_path, write_log, write_log_lines
 
 
 def test_passage_log_is_appended_under_cache(tmp_path):

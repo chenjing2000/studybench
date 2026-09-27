@@ -35,25 +35,30 @@ uv run pytest
 
 StudyBench currently includes three English-data skills:
 
-- `skills/passage_segment/SKILL.md`: converts clean Passage text into the V0.2 `passage.json` Segment structure.
+- `skills/passage_segment/SKILL.md`: converts clean Passage text into the current `passage.json` Segment structure.
 - `skills/image_to_passage/SKILL.md`: reads one or more English reading images, recovers the Passage body, drafts a title when the source has none, and creates `passage.json` plus optional `exercise.json`.
 - `skills/vocabulary_enrichment/SKILL.md`: uses `passage.json` as context to enrich meanings in `vocabulary.json` and conservatively add useful canonical multi-word expressions.
 
-## V0.2.0 breaking data-model simplification
+## V0.4.0 data model
 
-V0.2.0 intentionally drops the old V0.1 runtime format. The application no longer maintains BID, PID, GID, WID, or QID compatibility branches.
+V0.4.0 separates textbook Exercise data from user answers and adds lightweight per-Book accounts. It is a breaking upgrade for old embedded Exercise answers: legacy `question.answer` data is removed and is not migrated.
 
-A Library contains Book folders. A valid Book has `book.json`, a non-empty ordered Passage list, and every listed Passage must have a valid `passage.json`.
+A Library contains Book folders. A valid Book has `book.json`, a non-empty ordered Passage list, and every listed Passage must have a valid `passage.json`. Each Book also owns a `userdata/` area.
 
 ```text
-english/                         # sample Library
-└── english_reading/             # physical Book folder
+english/
+└── english_reading/
     ├── book.json
-    └── passages/
-        └── human_origins/       # physical Passage folder
-            ├── passage.json     # required
-            ├── vocabulary.json  # optional
-            └── exercise.json    # optional
+    ├── passages/
+    │   └── human_origins/
+    │       ├── passage.json
+    │       ├── vocabulary.json
+    │       └── exercise.json
+    └── userdata/
+        ├── default_user/
+        │   └── answer_sheet.json
+        └── chen jing/
+            └── answer_sheet.json
 ```
 
 `book.json`:
@@ -61,13 +66,28 @@ english/                         # sample Library
 ```json
 {
   "bookname": "English Reading",
-  "passages": ["human_origins"]
+  "passages": ["human_origins"],
+  "userdata": ["default_user", "chen jing"]
 }
 ```
 
-Book folder names are path components only. The left sidebar shows `bookname`.
+`userdata[]` stores user folder names in display order. `default_user` is always the first entry. Older Books without `userdata` are upgraded automatically and receive the system Default User. Userdata errors never invalidate the textbook Book itself.
 
-`passage.json` contains the Passage title and all Paragraph/Segment core data:
+## Library loading
+
+Click `选择文件夹` above the left tree and choose a Library root. The program scans only first-level subfolders containing `book.json`.
+
+- valid Books are sorted by `bookname`;
+- Passage order follows `book.json.passages[]`;
+- an empty Book is invalid;
+- if any listed Passage has a core error, the entire Book is omitted;
+- user-account errors are reported but do not hide an otherwise valid Book;
+- switching Libraries rebuilds the tree from scratch;
+- the last Library path is stored in `settings.json`.
+
+## Passage and Segment data
+
+The only permanent artificial ID is lowercase SID: `s001 ... s999`. `next_sid` is the non-reusing high-water mark.
 
 ```json
 {
@@ -90,44 +110,19 @@ Book folder names are path components only. The left sidebar shows `bookname`.
 }
 ```
 
-The Passage folder name is also only a path component. Both the left sidebar and center title display `passage.json.title`. `P1/P2` display numbering has been removed.
-
-## Library loading
-
-Click `选择文件夹` above the left tree and choose a Library root. The program scans only first-level subfolders containing `book.json`.
-
-- valid Books are sorted by `bookname`;
-- Passage order follows `book.json.passages[]`;
-- an empty Book is invalid;
-- if any listed Passage has a core error, the entire Book is omitted;
-- the status bar identifies the failing Passage and reason for 5 seconds;
-- multiple invalid-Book messages are queued and shown sequentially;
-- switching Library folders rebuilds the left tree from scratch;
-- the last Library path is stored in `settings.json`.
-
-## Segment and audio
-
-The only permanent artificial ID is lowercase SID: `s001 ... s999`. `next_sid` is the non-reusing high-water mark.
-
-Every Segment stores its expected UK/US audio paths before the MP3 files exist. `audio.json` and audio hashes are gone. Playback checks the real file only when requested.
-
-- missing audio → 5-second status-bar message;
-- unplayable/corrupt audio → 5-second status-bar message;
-- Paragraph/Read All refuses incomplete playback rather than silently skipping missing files.
-
-Segment text no longer stores artificial trailing spaces. The renderer inserts one ASCII space between adjacent Segments in the same Paragraph.
+Every Segment stores its expected UK/US audio paths before the MP3 files exist. Segment text contains no artificial trailing spaces; the renderer inserts one normal space between adjacent Segments in a Paragraph.
 
 ## Vocabulary
 
-`vocabulary.json` is optional and has no WID. The first selected word creates it when necessary. Each entry stores predeclared UK/US paths under `audio_vocabulary/`; the files themselves may be absent until the integrated `Gen Audio` extractor creates them. Vocabulary import validates the incoming file against the current StudyBench schema and then treats it as the authoritative replacement: entries may be added, modified, removed, or reordered by the imported `vocabulary.json`.
+`vocabulary.json` is optional and has no WID. The first selected word creates it when necessary. Each entry stores predeclared UK/US paths under `audio_vocabulary/`; the audio files may be absent until `Gen Audio` creates them. Import validates the incoming file and then treats it as the authoritative replacement.
 
-Each Vocabulary entry has three 16×16 rounded SVG action buttons at the far right, vertically centered across the whole entry, with 5 px between adjacent buttons. The SVG resources are stored under `study_bench/resources/icons/vocabulary/` and use rounded strokes in `#70695d`. The controls live in a floating overlay above the entry content rather than inside the entry layout, so they do not reserve horizontal layout space. The overlay follows the entry's right edge whenever the right panel is resized. Each button is visually transparent until the pointer hovers that individual button; the hovered button then shows its SVG over a borderless `#ecb0c1` background with a 5 px corner radius. The first entry disables the up control; the last entry disables the down control; a single-entry list disables both move buttons. Moving swaps the entry with its immediate neighbor by changing only the `words[]` array order. Deleting still happens immediately without a confirmation dialog, tooltip, or Undo, and does not delete existing MP3 files under `audio_vocabulary/`. Deleting the final entry keeps `vocabulary.json` as `{"words": []}`. Both move and delete refresh the right panel immediately, so alternating `#FFFFFF` / `#F5F6F2` entry backgrounds are recalculated from the new positions.
+Each Vocabulary entry has three 16×16 rounded SVG action buttons in a floating overlay at the far right, with **3 px** between adjacent buttons. The SVG resources live under `studybench/resources/icons/vocabulary/`. The first entry disables up, the last disables down, and deleting an entry never removes existing MP3 files. Alternating `#FFFFFF` / `#F5F6F2` backgrounds are recalculated after move/delete refreshes.
 
-The Vocabulary headword occupies its own first line. UK and US phonetics are shown together on the second line with their existing speaker buttons. Phonetics use a font one point smaller than the headword/body base, and meaning rows use that same smaller detail font. The three header buttons (`显示` / `隐藏`, `导出`, `导入`) remain equal-width and are reduced to roughly three quarters of their former width, while preserving enough room for the label.
+The right-panel header uses English `show` / `hide` for Vocabulary highlighting, alongside the existing export/import controls.
 
-## Exercise
+## Exercise and user answers
 
-`exercise.json` is optional and now contains all Question definitions and current user answers directly. There is no QID, `questions/` directory, or `answer_sheet.json`.
+`exercise.json` is optional and contains textbook Question definitions only. It never stores user data. There is no QID. Question number is `questions[]` array position + 1.
 
 ```json
 {
@@ -140,16 +135,49 @@ The Vocabulary headword occupies its own first line. UK and US phonetics are sho
         {"key": "B", "text": "..."}
       ],
       "reference_answer": "B",
-      "answer": {
-        "user_answer": "",
-        "user_note": ""
-      }
+      "explanation": "..."
     }
   ]
 }
 ```
 
-Question number is `questions[]` array position + 1. The data layer also provides a clear-all-answers operation that resets `user_answer` and `user_note` to empty strings.
+User answers are stored separately in the selected account's `answer_sheet.json`:
+
+```json
+{
+  "username": "Chen Jing",
+  "answers": {
+    "human_origins": [
+      {
+        "user_answer": "B",
+        "user_note": ""
+      }
+    ]
+  }
+}
+```
+
+The Passage folder name selects the answer array, and the Question array index selects the individual answer. If a Question is added later, missing answers are shown as empty. When the user next presses Save, the current Passage's answer array is rewritten to match the current Question count. Other Passage answers remain untouched.
+
+The center Exercise area has one `Save` button at the bottom. Editing a radio choice, fill blank, or note only marks the page dirty; it does not write JSON immediately. `Save` writes the complete current Passage answer array atomically. Leaving the current answer context with unsaved edits prompts `Save / Discard / Cancel`.
+
+## Lightweight accounts
+
+Every Book has a system account:
+
+```text
+Display name: Default User
+Folder:       default_user
+```
+
+It is created automatically if missing. Program startup and every Book switch use Default User. The left sidebar shows the complete current username and three buttons: `Register`, `Sign in`, and `Sign out`.
+
+- `Register` asks only for a username, creates its user folder and `answer_sheet.json`, adds the folder to `book.json.userdata`, then signs in automatically.
+- `Sign in` is a drop-down of already registered full usernames; there is no password.
+- `Sign out` switches back to Default User and is disabled while Default User is active.
+- switching Passage within the same Book keeps the current account; switching Book returns to that Book's Default User.
+
+For normal accounts, the folder name is the trimmed full username converted to lowercase. Other legal filename characters are preserved, so names such as `Chen Jing`, `Abcd_1234`, `Abcd+1234`, and `张三李四` are supported. Windows-illegal filename characters and reserved names are rejected. Username effective length must be at least 8, where ASCII letters/digits count as 1 and Chinese characters count as 2.
 
 ## Gen Audio
 
@@ -202,6 +230,6 @@ Each Passage may also contain `cache/studybench.log`. The log is append-only dia
 - Exercises allow normal selection but never show the Vocabulary `+` button.
 - Vocabulary headword color: `#4c8045`.
 - Selected Passage background: `#e0e0d0`.
-- Vocabulary highlight button defaults to `显示`; clicking it turns highlights on and changes the button to `隐藏`.
+- Vocabulary highlight button defaults to `show`; clicking it turns highlights on and changes the button to `hide`.
 
-The frozen English data rules are in `docs/English_Module_V0.2_Specification.md`; audio generation behavior is in `docs/Audio_Generation_V0.3_Specification.md`.
+The frozen English data rules are in `docs/English_Module_V0.4_Specification.md`; audio generation behavior is in `docs/Audio_Generation_V0.3_Specification.md`.

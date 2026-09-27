@@ -1,4 +1,4 @@
-from study_bench.audio_paths import ensure_passage_audio_directories
+from studybench.audio_paths import ensure_passage_audio_directories
 
 
 def test_ensure_passage_audio_directories_creates_both_default_folders(tmp_path):

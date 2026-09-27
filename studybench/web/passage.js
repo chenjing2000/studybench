@@ -4,6 +4,8 @@ let selectedText = "";
 let vocabularyWords = [];
 let vocabularyHighlightsVisible = false;
 let genAudioEnabled = true;
+let exerciseDirty = false;
+let exerciseSaveAllowed = true;
 
 const addButton = document.getElementById("selectionAddButton");
 
@@ -54,6 +56,28 @@ window.setGenAudioEnabled = function (enabled) {
   if (button) {
     button.disabled = !genAudioEnabled;
   }
+};
+
+window.setExerciseSaveAllowed = function (allowed) {
+  exerciseSaveAllowed = Boolean(allowed);
+  updateExerciseInputState();
+  updateExerciseSaveButton();
+};
+
+window.setExercises = function (questions) {
+  renderExercises(questions || []);
+};
+
+window.markExerciseSaved = function () {
+  setExerciseDirty(false);
+};
+
+window.submitExerciseAnswers = function () {
+  if (!bridge || !exerciseDirty || !exerciseSaveAllowed) {
+    return;
+  }
+  const answers = collectExerciseAnswers();
+  bridge.saveExerciseAnswers(JSON.stringify(answers));
 };
 
 window.updateAudioState = function (state, owner) {
@@ -282,6 +306,7 @@ function renderPassageControls() {
 function renderExercises(questions) {
   const section = document.getElementById("exerciseSection");
   section.replaceChildren();
+  setExerciseDirty(false);
 
   if (!questions.length) {
     return;
@@ -296,6 +321,7 @@ function renderExercises(questions) {
     const block = document.createElement("div");
     block.className = "question";
     block.dataset.questionIndex = String(questionIndex);
+    block.dataset.questionType = question.type;
 
     if (question.type === "choice") {
       renderChoiceQuestion(block, question, questionIndex);
@@ -304,9 +330,27 @@ function renderExercises(questions) {
     }
 
     renderAnswerInfo(block, question);
-    renderUserNote(block, question, questionIndex);
+    renderUserNote(block, question);
     section.appendChild(block);
   });
+
+  const saveRow = document.createElement("div");
+  saveRow.className = "exercise-save-row";
+
+  const saveButton = document.createElement("button");
+  saveButton.id = "exerciseSaveButton";
+  saveButton.type = "button";
+  saveButton.className = "control-button exercise-save-button";
+  saveButton.textContent = "Save";
+  saveButton.disabled = true;
+  saveButton.addEventListener("click", function () {
+    window.submitExerciseAnswers();
+  });
+
+  saveRow.appendChild(saveButton);
+  section.appendChild(saveRow);
+  updateExerciseInputState();
+  updateExerciseSaveButton();
 }
 
 function renderChoiceQuestion(block, question, questionIndex) {
@@ -329,16 +373,16 @@ function renderChoiceQuestion(block, question, questionIndex) {
     radio.value = option.key;
     radio.checked = savedAnswer === option.key;
     radio.addEventListener("change", function () {
-      if (radio.checked && bridge) {
-        bridge.saveAnswer(questionIndex, option.key);
+      if (radio.checked) {
+        setExerciseDirty(true);
       }
     });
 
-    const text = document.createElement("span");
-    text.textContent = option.key + ". " + option.text;
+    const optionText = document.createElement("span");
+    optionText.textContent = option.key + ". " + option.text;
 
     row.appendChild(radio);
-    row.appendChild(text);
+    row.appendChild(optionText);
     options.appendChild(row);
   });
 
@@ -359,14 +403,12 @@ function renderFillBlankQuestion(block, question, questionIndex) {
   input.className = "fill-input";
   input.type = "text";
   input.value = question.answer ? question.answer.user_answer || "" : "";
+  input.addEventListener("input", function () {
+    setExerciseDirty(true);
+  });
   input.addEventListener("keydown", function (event) {
     if (event.key === "Enter") {
       input.blur();
-    }
-  });
-  input.addEventListener("blur", function () {
-    if (bridge) {
-      bridge.saveAnswer(questionIndex, input.value);
     }
   });
   prompt.appendChild(input);
@@ -392,7 +434,7 @@ function renderAnswerInfo(block, question) {
   block.appendChild(info);
 }
 
-function renderUserNote(block, question, questionIndex) {
+function renderUserNote(block, question) {
   const label = document.createElement("label");
   label.className = "user-note-label";
   label.textContent = "Your note:";
@@ -401,12 +443,70 @@ function renderUserNote(block, question, questionIndex) {
   const note = document.createElement("textarea");
   note.className = "user-note";
   note.value = question.answer ? question.answer.user_note || "" : "";
-  note.addEventListener("blur", function () {
-    if (bridge) {
-      bridge.saveUserNote(questionIndex, note.value);
-    }
+  note.addEventListener("input", function () {
+    setExerciseDirty(true);
   });
   block.appendChild(note);
+}
+
+function setExerciseDirty(dirty) {
+  exerciseDirty = Boolean(dirty);
+  updateExerciseSaveButton();
+  if (bridge) {
+    bridge.setExerciseDirty(exerciseDirty);
+  }
+}
+
+function updateExerciseSaveButton() {
+  const button = document.getElementById("exerciseSaveButton");
+  if (!button) {
+    return;
+  }
+  button.disabled = !exerciseSaveAllowed || !exerciseDirty;
+}
+
+function updateExerciseInputState() {
+  const controls = document.querySelectorAll(
+    "#exerciseSection input, #exerciseSection textarea"
+  );
+  controls.forEach(function (control) {
+    control.disabled = !exerciseSaveAllowed;
+  });
+}
+
+function collectExerciseAnswers() {
+  const answers = [];
+  const questions = document.querySelectorAll("#exerciseSection .question");
+
+  questions.forEach(function (question) {
+    let userAnswer = "";
+    const questionType = question.dataset.questionType;
+
+    if (questionType === "choice") {
+      const checked = question.querySelector('input[type="radio"]:checked');
+      if (checked) {
+        userAnswer = checked.value;
+      }
+    } else if (questionType === "fill_blank") {
+      const input = question.querySelector(".fill-input");
+      if (input) {
+        userAnswer = input.value;
+      }
+    }
+
+    let userNote = "";
+    const note = question.querySelector(".user-note");
+    if (note) {
+      userNote = note.value;
+    }
+
+    answers.push({
+      user_answer: userAnswer,
+      user_note: userNote,
+    });
+  });
+
+  return answers;
 }
 
 const passageTextElement = document.getElementById("passageText");

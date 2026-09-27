@@ -4,6 +4,8 @@ from PySide6.QtCore import QObject, Signal, Slot
 class WebBridge(QObject):
     vocabulary_changed = Signal()
     gen_audio_requested = Signal()
+    exercise_dirty_changed = Signal(bool)
+    exercise_save_requested = Signal(str)
     message = Signal(str)
 
     def __init__(self, english_data, audio_player, parent=None):
@@ -92,23 +94,16 @@ class WebBridge(QObject):
         except Exception as error:
             self.message.emit(str(error))
 
-    @Slot(int, str)
-    def saveAnswer(self, question_index, answer):
-        self._save_answer(question_index, "user_answer", answer)
+    @Slot(bool)
+    def setExerciseDirty(self, dirty):
+        self.exercise_dirty_changed.emit(bool(dirty))
 
-    @Slot(int, str)
-    def saveUserNote(self, question_index, note):
-        self._save_answer(question_index, "user_note", note)
-
-    def _save_answer(self, question_index, field_name, value):
+    @Slot(str)
+    def saveExerciseAnswers(self, answers_json):
         if not self._has_passage():
+            self.message.emit("当前没有打开 Passage。")
             return
-        try:
-            self.english_data.save_answer_field(
-                self.passage_dir, question_index, field_name, value
-            )
-        except Exception as error:
-            self.message.emit(str(error))
+        self.exercise_save_requested.emit(str(answers_json))
 
     def _has_passage(self):
         return bool(self.passage_dir)

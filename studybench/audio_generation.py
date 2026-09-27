@@ -4,7 +4,7 @@ import traceback
 
 from PySide6.QtCore import QObject, Signal
 
-from study_bench_audio_extractor import run as run_audio_extractor
+from studybench_audio_extractor import run as run_audio_extractor
 
 from .run_log import write_log, write_log_lines
 

@@ -2,8 +2,8 @@ import json
 import threading
 from pathlib import Path
 
-from study_bench_audio_extractor.models import AudioPayloads, MdictLookupResult, TtsConfig
-from study_bench_audio_extractor.vocabulary_processor import process_vocabulary
+from studybench_audio_extractor.models import AudioPayloads, MdictLookupResult, TtsConfig
+from studybench_audio_extractor.vocabulary_processor import process_vocabulary
 
 
 class ConcurrentEditProvider:
@@ -84,8 +84,8 @@ def test_vocabulary_phonetic_merge_preserves_word_added_during_generation(tmp_pa
 
 
 def test_extractor_processes_only_current_passage_directory(tmp_path, monkeypatch):
-    from study_bench_audio_extractor import extractor
-    from study_bench_audio_extractor.models import FileProcessStats
+    from studybench_audio_extractor import extractor
+    from studybench_audio_extractor.models import FileProcessStats
 
     root_passage = tmp_path / "passage.json"
     root_vocabulary = tmp_path / "vocabulary.json"
@@ -120,8 +120,8 @@ def test_extractor_processes_only_current_passage_directory(tmp_path, monkeypatc
 
 
 def test_passage_stats_count_processed_skipped_and_failed(tmp_path):
-    from study_bench_audio_extractor.models import AudioPayloads, TtsConfig
-    from study_bench_audio_extractor.passage_processor import process_passage
+    from studybench_audio_extractor.models import AudioPayloads, TtsConfig
+    from studybench_audio_extractor.passage_processor import process_passage
 
     passage_path = tmp_path / "passage.json"
     passage_path.write_text(
@@ -176,8 +176,8 @@ def test_passage_stats_count_processed_skipped_and_failed(tmp_path):
 
 
 def test_vocabulary_stats_count_processed_skipped_and_failed(tmp_path):
-    from study_bench_audio_extractor.models import AudioPayloads, MdictLookupResult, TtsConfig
-    from study_bench_audio_extractor.vocabulary_processor import process_vocabulary
+    from studybench_audio_extractor.models import AudioPayloads, MdictLookupResult, TtsConfig
+    from studybench_audio_extractor.vocabulary_processor import process_vocabulary
 
     vocabulary_path = tmp_path / "vocabulary.json"
     vocabulary_path.write_text(
@@ -237,7 +237,7 @@ def test_vocabulary_stats_count_processed_skipped_and_failed(tmp_path):
 def test_extractor_json_reader_rejects_duplicate_keys(tmp_path):
     import pytest
 
-    from study_bench_audio_extractor.io_utils import DataError, load_json
+    from studybench_audio_extractor.io_utils import DataError, load_json
 
     path = tmp_path / "vocabulary.json"
     path.write_text('{"words": [], "words": [{"word": "x"}]}', encoding="utf-8")

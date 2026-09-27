@@ -55,7 +55,7 @@ The active job always finishes against the Passage captured at click time. If th
 
 ## Extractor behavior
 
-The integrated extractor is based on `study_bench_audio_extractor` V0.1.1, but the StudyBench integration intentionally removes the old recursive scanner and temporary processed-file registry. `Gen Audio` handles only `passage.json` and optional `vocabulary.json` directly inside the captured Passage directory.
+The integrated extractor is based on `studybench_audio_extractor` V0.1.1, but the StudyBench integration intentionally removes the old recursive scanner and temporary processed-file registry. `Gen Audio` handles only `passage.json` and optional `vocabulary.json` directly inside the captured Passage directory.
 
 
 - `passage.json`: generate only missing UK/US Segment audio with Edge-TTS;

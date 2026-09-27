@@ -6,6 +6,33 @@ from .json_store import read_json, write_json_atomic
 
 
 SID_PATTERN = re.compile(r"^s(\d{3})$")
+DEFAULT_USER_FOLDER = "default_user"
+DEFAULT_USERNAME = "Default User"
+WINDOWS_INVALID_FILENAME_CHARS = '<>:"/\\|?*'
+WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+}
 
 
 class Segment:
@@ -41,17 +68,23 @@ class EnglishData:
                 continue
 
             try:
-                books.append(self._load_book(child))
+                book, warnings = self._load_book(child)
+                books.append(book)
+                errors.extend(warnings)
             except Exception as error:
                 errors.append(str(error))
 
         books.sort(key=self._book_sort_key)
         return books, errors
 
-    def load_passage_payload(self, passage_dir):
+    def load_passage_payload(self, passage_dir, user_folder=DEFAULT_USER_FOLDER):
         passage_dir = Path(passage_dir)
         passage = self._load_passage(passage_dir)
-        questions, warnings = self._load_optional_exercise(passage_dir, passage["title"])
+        questions, warnings = self.load_exercise_payload(
+            passage_dir,
+            user_folder,
+            passage["title"],
+        )
 
         rendered_paragraphs = []
         for paragraph in passage["paragraphs"]:
@@ -70,6 +103,44 @@ class EnglishData:
             "paragraphs": rendered_paragraphs,
             "questions": questions,
         }
+        return payload, warnings
+
+    def load_exercise_payload(
+        self,
+        passage_dir,
+        user_folder=DEFAULT_USER_FOLDER,
+        passage_title=None,
+    ):
+        passage_dir = Path(passage_dir)
+        exercise_path = passage_dir / "exercise.json"
+        if not exercise_path.exists():
+            return [], []
+
+        if not passage_title:
+            passage_title = self._best_passage_label(passage_dir, passage_dir.name)
+
+        try:
+            exercise = read_json(exercise_path)
+            changed = self._strip_legacy_exercise_answers(exercise)
+            if changed:
+                write_json_atomic(exercise_path, exercise)
+            questions = self._validate_exercise(exercise)
+        except Exception as error:
+            return [], [f"《{passage_title}》：exercise.json 无法加载：{error}"]
+
+        warnings = []
+        saved_answers = []
+        try:
+            saved_answers = self._load_answers_for_passage(
+                passage_dir,
+                user_folder,
+            )
+        except Exception as error:
+            warnings.append(
+                f"《{passage_title}》：用户答案无法加载：{error}"
+            )
+
+        payload = self._merge_exercise_answers(questions, saved_answers)
         return payload, warnings
 
     def get_vocabulary(self, passage_dir):
@@ -215,23 +286,156 @@ class EnglishData:
         with self.vocabulary_lock:
             write_json_atomic(target, incoming)
 
-    def save_answer_field(self, passage_dir, question_index, field_name, value):
-        if field_name not in ("user_answer", "user_note"):
-            raise ValueError(f"不支持的答案字段：{field_name}")
-        if not isinstance(question_index, int):
-            raise ValueError("Question index 必须是整数。")
-
+    def book_dir_for_passage(self, passage_dir):
         passage_dir = Path(passage_dir)
+        return passage_dir.parent.parent
+
+    def list_user_accounts(self, book_dir):
+        book_dir = Path(book_dir)
+        book_path = book_dir / "book.json"
+        book = read_json(book_path)
+        references = self._current_userdata_references(book)
+
+        accounts = []
+        warnings = []
+        for folder_name in references:
+            try:
+                account = self.get_user_account(book_dir, folder_name)
+                accounts.append(account)
+            except Exception as error:
+                warnings.append(
+                    f"《{book.get('bookname', book_dir.name)}》用户 {folder_name} 无法加载：{error}"
+                )
+        return accounts, warnings
+
+    def get_user_account(self, book_dir, user_folder):
+        book_dir = Path(book_dir)
+        self._validate_user_folder_reference(user_folder)
+        answer_path = book_dir / "userdata" / user_folder / "answer_sheet.json"
+        data = read_json(answer_path)
+        self._validate_answer_sheet(data, user_folder)
+        return {
+            "folder": user_folder,
+            "username": data["username"],
+        }
+
+    def validate_new_username(self, book_dir, username):
+        book_dir = Path(book_dir)
+        clean_username, folder_name = self._validate_registration_username(username)
+
+        book = read_json(book_dir / "book.json")
+        references = self._current_userdata_references(book)
+        folder_key = folder_name.casefold()
+        for existing in references:
+            if existing.casefold() == folder_key:
+                raise ValueError("该用户名对应的账户已经存在。")
+
+        user_dir = book_dir / "userdata" / folder_name
+        if user_dir.exists():
+            raise ValueError("该用户名对应的账户已经存在。")
+
+        return {
+            "username": clean_username,
+            "folder": folder_name,
+        }
+
+    def register_user(self, book_dir, username):
+        book_dir = Path(book_dir)
+        registration = self.validate_new_username(book_dir, username)
+        folder_name = registration["folder"]
+        clean_username = registration["username"]
+
+        book_path = book_dir / "book.json"
+        book = read_json(book_path)
+        references = self._current_userdata_references(book)
+
+        userdata_root = book_dir / "userdata"
+        userdata_root.mkdir(parents=True, exist_ok=True)
+        user_dir = userdata_root / folder_name
+        answer_path = user_dir / "answer_sheet.json"
+        created_dir = False
+
+        try:
+            user_dir.mkdir()
+            created_dir = True
+            write_json_atomic(
+                answer_path,
+                {
+                    "username": clean_username,
+                    "answers": {},
+                },
+            )
+            references.append(folder_name)
+            book["userdata"] = references
+            write_json_atomic(book_path, book)
+        except Exception:
+            if created_dir:
+                try:
+                    if answer_path.exists():
+                        answer_path.unlink()
+                    user_dir.rmdir()
+                except OSError:
+                    pass
+            raise
+
+        return {
+            "folder": folder_name,
+            "username": clean_username,
+        }
+
+    def save_exercise_answers(self, passage_dir, user_folder, answers):
+        passage_dir = Path(passage_dir)
+        if not isinstance(answers, list):
+            raise ValueError("Exercise answers 必须是数组。")
+
         exercise_path = passage_dir / "exercise.json"
         exercise = read_json(exercise_path)
+        changed = self._strip_legacy_exercise_answers(exercise)
+        if changed:
+            write_json_atomic(exercise_path, exercise)
         questions = self._validate_exercise(exercise)
 
-        if question_index < 0 or question_index >= len(questions):
-            raise ValueError("Question index 超出范围。")
+        if len(answers) != len(questions):
+            raise ValueError("当前答案数量与 Exercise 题目数量不一致。")
 
-        answer = questions[question_index]["answer"]
-        answer[field_name] = str(value)
-        write_json_atomic(exercise_path, exercise)
+        normalized_answers = []
+        for index, answer in enumerate(answers):
+            if not isinstance(answer, dict):
+                raise ValueError(f"第 {index + 1} 题答案结构无效。")
+
+            user_answer = answer.get("user_answer")
+            user_note = answer.get("user_note")
+            if not isinstance(user_answer, str):
+                raise ValueError(f"第 {index + 1} 题 user_answer 必须是字符串。")
+            if not isinstance(user_note, str):
+                raise ValueError(f"第 {index + 1} 题 user_note 必须是字符串。")
+
+            question = questions[index]
+            if question.get("type") == "choice" and user_answer:
+                valid_keys = []
+                for option in question.get("options", []):
+                    valid_keys.append(option.get("key"))
+                if user_answer not in valid_keys:
+                    raise ValueError(
+                        f"第 {index + 1} 题 user_answer 不属于选项 key。"
+                    )
+
+            normalized_answers.append(
+                {
+                    "user_answer": user_answer,
+                    "user_note": user_note,
+                }
+            )
+
+        book_dir = self.book_dir_for_passage(passage_dir)
+        self._validate_user_folder_reference(user_folder)
+        answer_path = book_dir / "userdata" / user_folder / "answer_sheet.json"
+        answer_sheet = read_json(answer_path)
+        self._validate_answer_sheet(answer_sheet, user_folder)
+
+        passage_folder = passage_dir.name
+        answer_sheet["answers"][passage_folder] = normalized_answers
+        write_json_atomic(answer_path, answer_sheet)
 
     def get_segment_audio_path(self, passage_dir, sid, accent):
         self._validate_accent(accent)
@@ -309,6 +513,23 @@ class EnglishData:
         if not isinstance(passages, list) or not passages:
             raise ValueError(f"未加载《{bookname}》：passages 必须是非空数组。")
 
+        user_warnings = self._prepare_book_userdata(
+            book_dir,
+            book,
+            book_path,
+            bookname,
+        )
+        references = self._current_userdata_references(book)
+        for user_folder in references:
+            if user_folder == DEFAULT_USER_FOLDER:
+                continue
+            try:
+                self.get_user_account(book_dir, user_folder)
+            except Exception as error:
+                user_warnings.append(
+                    f"《{bookname}》用户 {user_folder} 无法加载：{error}"
+                )
+
         passages_root = book_dir / "passages"
         if not passages_root.exists() or not passages_root.is_dir():
             raise ValueError(f"未加载《{bookname}》：缺少 passages 文件夹。")
@@ -342,6 +563,8 @@ class EnglishData:
                     f"未加载《{bookname}》：{passage_label}：{error}"
                 ) from None
 
+            self._upgrade_legacy_exercise_if_possible(passage_dir)
+
             passage_items.append(
                 {
                     "title": passage["title"],
@@ -350,12 +573,13 @@ class EnglishData:
                 }
             )
 
-        return {
+        result = {
             "bookname": bookname,
             "folder": book_dir.name,
             "path": str(book_dir),
             "passages": passage_items,
         }
+        return result, user_warnings
 
     def _load_passage(self, passage_dir):
         passage_dir = Path(passage_dir)
@@ -443,19 +667,10 @@ class EnglishData:
 
         return Segment(sid, text, {"uk": uk, "us": us})
 
-    def _load_optional_exercise(self, passage_dir, passage_title):
-        exercise_path = Path(passage_dir) / "exercise.json"
-        if not exercise_path.exists():
-            return [], []
-
-        try:
-            exercise = read_json(exercise_path)
-            questions = self._validate_exercise(exercise)
-            return questions, []
-        except Exception as error:
-            return [], [f"《{passage_title}》：exercise.json 无法加载：{error}"]
-
     def _validate_exercise(self, data):
+        if not isinstance(data, dict):
+            raise ValueError("exercise.json 必须是 JSON object。")
+
         questions = data.get("questions")
         if not isinstance(questions, list):
             raise ValueError("questions 必须是数组。")
@@ -463,6 +678,9 @@ class EnglishData:
         for index, question in enumerate(questions):
             if not isinstance(question, dict):
                 raise ValueError(f"第 {index + 1} 题结构无效。")
+
+            if "answer" in question:
+                raise ValueError(f"第 {index + 1} 题不能包含 answer 用户数据。")
 
             question_type = question.get("type")
             prompt = question.get("prompt")
@@ -478,14 +696,6 @@ class EnglishData:
             explanation = question.get("explanation", "")
             if not isinstance(explanation, str):
                 raise ValueError(f"第 {index + 1} 题 explanation 必须是字符串。")
-
-            answer = question.get("answer")
-            if not isinstance(answer, dict):
-                raise ValueError(f"第 {index + 1} 题缺少 answer。")
-            if not isinstance(answer.get("user_answer", ""), str):
-                raise ValueError(f"第 {index + 1} 题 user_answer 必须是字符串。")
-            if not isinstance(answer.get("user_note", ""), str):
-                raise ValueError(f"第 {index + 1} 题 user_note 必须是字符串。")
 
             if question_type == "choice":
                 self._validate_choice_question(question, index)
@@ -516,14 +726,315 @@ class EnglishData:
         if question.get("reference_answer") not in keys:
             raise ValueError(f"第 {index + 1} 题 reference_answer 不属于选项 key。")
 
-        user_answer = question["answer"].get("user_answer", "")
-        if user_answer and user_answer not in keys:
-            raise ValueError(f"第 {index + 1} 题 user_answer 不属于选项 key。")
-
     def _validate_fill_blank_question(self, question, index):
         prompt = question.get("prompt", "")
         if prompt.count("______") != 1:
             raise ValueError(f"第 {index + 1} 题必须且只能包含一个 ______。")
+
+    def _strip_legacy_exercise_answers(self, exercise):
+        if not isinstance(exercise, dict):
+            return False
+        questions = exercise.get("questions")
+        if not isinstance(questions, list):
+            return False
+
+        changed = False
+        for question in questions:
+            if isinstance(question, dict) and "answer" in question:
+                del question["answer"]
+                changed = True
+        return changed
+
+    def _upgrade_legacy_exercise_if_possible(self, passage_dir):
+        exercise_path = Path(passage_dir) / "exercise.json"
+        if not exercise_path.exists() or not exercise_path.is_file():
+            return
+        try:
+            exercise = read_json(exercise_path)
+            changed = self._strip_legacy_exercise_answers(exercise)
+            if changed:
+                write_json_atomic(exercise_path, exercise)
+            self._validate_exercise(exercise)
+        except Exception:
+            return
+
+    def _merge_exercise_answers(self, questions, saved_answers):
+        result = []
+        for index, question in enumerate(questions):
+            item = dict(question)
+            user_answer = ""
+            user_note = ""
+
+            if index < len(saved_answers):
+                saved = saved_answers[index]
+                if isinstance(saved, dict):
+                    raw_answer = saved.get("user_answer", "")
+                    raw_note = saved.get("user_note", "")
+                    if isinstance(raw_answer, str):
+                        user_answer = raw_answer
+                    if isinstance(raw_note, str):
+                        user_note = raw_note
+
+            if item.get("type") == "choice" and user_answer:
+                valid_keys = []
+                for option in item.get("options", []):
+                    valid_keys.append(option.get("key"))
+                if user_answer not in valid_keys:
+                    user_answer = ""
+
+            item["answer"] = {
+                "user_answer": user_answer,
+                "user_note": user_note,
+            }
+            result.append(item)
+        return result
+
+    def _load_answers_for_passage(self, passage_dir, user_folder):
+        passage_dir = Path(passage_dir)
+        book_dir = self.book_dir_for_passage(passage_dir)
+        self._validate_user_folder_reference(user_folder)
+        answer_path = book_dir / "userdata" / user_folder / "answer_sheet.json"
+        answer_sheet = read_json(answer_path)
+        self._validate_answer_sheet(answer_sheet, user_folder)
+
+        passage_answers = answer_sheet["answers"].get(passage_dir.name, [])
+        if not isinstance(passage_answers, list):
+            raise ValueError(
+                f"{user_folder} 的 {passage_dir.name} answers 必须是数组。"
+            )
+        return passage_answers
+
+    def _prepare_book_userdata(self, book_dir, book, book_path, bookname):
+        warnings = []
+        raw_userdata = book.get("userdata")
+        cleaned = []
+        seen = set()
+        changed = False
+
+        if raw_userdata is None:
+            changed = True
+            raw_userdata = []
+        elif not isinstance(raw_userdata, list):
+            warnings.append(
+                f"《{bookname}》：userdata 必须是数组，已恢复为默认账户。"
+            )
+            raw_userdata = []
+            changed = True
+
+        for folder_name in raw_userdata:
+            try:
+                self._validate_user_folder_reference(folder_name)
+            except Exception as error:
+                warnings.append(f"《{bookname}》：忽略无效用户目录引用：{error}")
+                changed = True
+                continue
+
+            key = folder_name.casefold()
+            if key in seen:
+                warnings.append(
+                    f"《{bookname}》：忽略重复用户目录引用 {folder_name}。"
+                )
+                changed = True
+                continue
+            seen.add(key)
+            if folder_name == DEFAULT_USER_FOLDER:
+                continue
+            cleaned.append(folder_name)
+
+        references = [DEFAULT_USER_FOLDER]
+        references.extend(cleaned)
+        if raw_userdata != references:
+            changed = True
+
+        book["userdata"] = references
+        if changed:
+            try:
+                write_json_atomic(book_path, book)
+            except Exception as error:
+                warnings.append(
+                    f"《{bookname}》：无法更新 book.json 的 userdata：{error}"
+                )
+
+        try:
+            self._ensure_default_user(book_dir)
+        except Exception as error:
+            warnings.append(f"《{bookname}》：Default User 初始化失败：{error}")
+
+        return warnings
+
+    def _ensure_default_user(self, book_dir):
+        book_dir = Path(book_dir)
+        user_dir = book_dir / "userdata" / DEFAULT_USER_FOLDER
+        answer_path = user_dir / "answer_sheet.json"
+        user_dir.mkdir(parents=True, exist_ok=True)
+
+        if not answer_path.exists():
+            write_json_atomic(
+                answer_path,
+                {
+                    "username": DEFAULT_USERNAME,
+                    "answers": {},
+                },
+            )
+            return
+
+        data = read_json(answer_path)
+        self._validate_answer_sheet(data, DEFAULT_USER_FOLDER)
+
+    def _validate_answer_sheet(self, data, user_folder):
+        if not isinstance(data, dict):
+            raise ValueError("answer_sheet.json 必须是 JSON object。")
+
+        username = data.get("username")
+        if not isinstance(username, str) or not username.strip():
+            raise ValueError("answer_sheet.json 的 username 不能为空。")
+        if username != username.strip():
+            raise ValueError("answer_sheet.json 的 username 不能包含首尾空格。")
+
+        if user_folder == DEFAULT_USER_FOLDER:
+            if username != DEFAULT_USERNAME:
+                raise ValueError(
+                    f"Default User 的 username 必须是 {DEFAULT_USERNAME}。"
+                )
+        else:
+            clean_username, expected_folder = self._validate_registration_username(
+                username
+            )
+            if clean_username != username:
+                raise ValueError("username 与注册时的完整用户名不一致。")
+            if expected_folder != user_folder:
+                raise ValueError("username 与用户文件夹名不匹配。")
+
+        answers = data.get("answers")
+        if not isinstance(answers, dict):
+            raise ValueError("answer_sheet.json 的 answers 必须是 JSON object。")
+
+        for passage_folder, passage_answers in answers.items():
+            if not isinstance(passage_folder, str) or not passage_folder:
+                raise ValueError("answer_sheet.json 包含无效 Passage key。")
+            if not isinstance(passage_answers, list):
+                raise ValueError(
+                    f"{passage_folder} 的 answers 必须是数组。"
+                )
+            for answer in passage_answers:
+                if not isinstance(answer, dict):
+                    raise ValueError(
+                        f"{passage_folder} 包含无效答案结构。"
+                    )
+                if not isinstance(answer.get("user_answer"), str):
+                    raise ValueError(
+                        f"{passage_folder} 的 user_answer 必须是字符串。"
+                    )
+                if not isinstance(answer.get("user_note"), str):
+                    raise ValueError(
+                        f"{passage_folder} 的 user_note 必须是字符串。"
+                    )
+
+    def _current_userdata_references(self, book):
+        raw_userdata = book.get("userdata")
+        result = [DEFAULT_USER_FOLDER]
+        seen = {DEFAULT_USER_FOLDER.casefold()}
+
+        if not isinstance(raw_userdata, list):
+            return result
+
+        for folder_name in raw_userdata:
+            try:
+                self._validate_user_folder_reference(folder_name)
+            except Exception:
+                continue
+            key = folder_name.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(folder_name)
+        return result
+
+    def _validate_registration_username(self, username):
+        if not isinstance(username, str):
+            raise ValueError("Username 必须是字符串。")
+
+        clean_username = username.strip()
+        if not clean_username:
+            raise ValueError("Username 不能为空。")
+
+        if clean_username.casefold() in (
+            DEFAULT_USERNAME.casefold(),
+            DEFAULT_USER_FOLDER.casefold(),
+        ):
+            raise ValueError("该名称属于系统默认账户，不能注册。")
+
+        for character in clean_username:
+            if ord(character) < 32:
+                raise ValueError("Username 不能包含控制字符。")
+            if character in WINDOWS_INVALID_FILENAME_CHARS:
+                raise ValueError(
+                    f"Username 不能包含 Windows 文件名非法字符：{character}"
+                )
+
+        if clean_username.endswith("."):
+            raise ValueError("Username 不能以句点结尾。")
+
+        effective_length = self._effective_username_length(clean_username)
+        if effective_length < 8:
+            raise ValueError(
+                "Username 有效长度不足：英文字母/数字至少 8 个，或中文字符至少 4 个。"
+            )
+
+        folder_name = clean_username.lower()
+        if self._is_windows_reserved_name(folder_name):
+            raise ValueError("Username 会生成 Windows 保留文件名，不能注册。")
+
+        self._validate_user_folder_reference(folder_name)
+        return clean_username, folder_name
+
+    def _effective_username_length(self, username):
+        total = 0
+        for character in username:
+            if character.isascii() and character.isalnum():
+                total += 1
+            elif self._is_chinese_character(character):
+                total += 2
+        return total
+
+    def _is_chinese_character(self, character):
+        code = ord(character)
+        ranges = (
+            (0x3400, 0x4DBF),
+            (0x4E00, 0x9FFF),
+            (0x20000, 0x2A6DF),
+            (0x2A700, 0x2B73F),
+            (0x2B740, 0x2B81F),
+            (0x2B820, 0x2CEAF),
+            (0x2CEB0, 0x2EBEF),
+            (0x30000, 0x3134F),
+        )
+        for start, end in ranges:
+            if start <= code <= end:
+                return True
+        return False
+
+    def _is_windows_reserved_name(self, folder_name):
+        candidate = str(folder_name).rstrip(" .")
+        first_part = candidate.split(".", 1)[0].rstrip(" .").upper()
+        return first_part in WINDOWS_RESERVED_NAMES
+
+    def _validate_user_folder_reference(self, folder_name):
+        if not isinstance(folder_name, str) or not folder_name:
+            raise ValueError("userdata 中的文件夹名不能为空。")
+        if folder_name != folder_name.strip():
+            raise ValueError(f"用户文件夹名不能包含首尾空格：{folder_name}")
+        if folder_name in (".", ".."):
+            raise ValueError(f"非法用户文件夹引用：{folder_name}")
+        if "/" in folder_name or "\\" in folder_name:
+            raise ValueError(
+                f"用户必须引用 userdata 下的直接子文件夹：{folder_name}"
+            )
+        for character in folder_name:
+            if ord(character) < 32 or character in WINDOWS_INVALID_FILENAME_CHARS:
+                raise ValueError(f"非法用户文件夹名：{folder_name}")
+        if folder_name.endswith("."):
+            raise ValueError(f"用户文件夹名不能以句点结尾：{folder_name}")
 
     def _validate_vocabulary(self, data):
         words = data.get("words")

@@ -8,7 +8,11 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QSplitter,
     QVBoxLayout,
@@ -19,7 +23,7 @@ from .audio_config import inspect_audio_config, load_audio_config_for_run
 from .audio_generation import AudioGenerationSignals, generate_current_passage_audio
 from .audio_player import AudioPlayer
 from .audio_paths import ensure_passage_audio_directories
-from .english_data import EnglishData
+from .english_data import DEFAULT_USER_FOLDER, DEFAULT_USERNAME, EnglishData
 from .web_bridge import WebBridge
 from .window_settings import load_settings, save_settings
 from .widgets.english_tree import EnglishTree
@@ -39,9 +43,17 @@ class MainWindow(QMainWindow):
         self.web_bridge = WebBridge(self.english_data, self.audio_player, self)
 
         self.library_dir = ""
+        self.current_book_dir = ""
         self.current_passage_dir = ""
         self.current_payload = None
         self.current_words = []
+        self.current_accounts = []
+        self.current_user_folder = DEFAULT_USER_FOLDER
+        self.current_username = DEFAULT_USERNAME
+        self.current_user_available = False
+        self.exercise_dirty = False
+        self.pending_action_kind = ""
+        self.pending_action_value = None
         self.page_loaded = False
         self.saved_settings = load_settings(self.settings_path)
         self.restore_maximized = False
@@ -63,9 +75,40 @@ class MainWindow(QMainWindow):
         self._load_initial_library()
 
     def _build_ui(self):
-        assets_dir = self.project_root / "study_bench" / "assets"
+        assets_dir = self.project_root / "studybench" / "assets"
         self.english_tree = EnglishTree(assets_dir)
         self.select_folder_button = QPushButton("选择文件夹")
+
+        self.web_view = QWebEngineView()
+        self.vocabulary_panel = VocabularyPanel()
+
+        control_font = self.vocabulary_panel.import_button.font()
+        control_height = self.vocabulary_panel.import_button.sizeHint().height()
+        self.select_folder_button.setFont(control_font)
+        self.select_folder_button.setFixedHeight(control_height)
+
+        self.account_font = self.vocabulary_panel.highlight_button.font()
+        self.account_font.setBold(False)
+
+        self.user_label = QLabel("User: " + DEFAULT_USERNAME)
+        self.user_label.setFont(self.account_font)
+
+        self.register_button = QPushButton("Register")
+        self.sign_in_button = QPushButton("Sign in")
+        self.sign_out_button = QPushButton("Sign out")
+        self.register_button.setFont(self.account_font)
+        self.sign_in_button.setFont(self.account_font)
+        self.sign_out_button.setFont(self.account_font)
+        self.register_button.setFixedHeight(control_height)
+        self.sign_in_button.setFixedHeight(control_height)
+        self.sign_out_button.setFixedHeight(control_height)
+
+        account_layout = QHBoxLayout()
+        account_layout.setContentsMargins(0, 0, 0, 0)
+        account_layout.setSpacing(4)
+        account_layout.addWidget(self.register_button, 1)
+        account_layout.addWidget(self.sign_in_button, 1)
+        account_layout.addWidget(self.sign_out_button, 1)
 
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
@@ -73,14 +116,8 @@ class MainWindow(QMainWindow):
         left_layout.setSpacing(8)
         left_layout.addWidget(self.select_folder_button)
         left_layout.addWidget(self.english_tree, 1)
-
-        self.web_view = QWebEngineView()
-        self.vocabulary_panel = VocabularyPanel()
-
-        self.select_folder_button.setFont(self.vocabulary_panel.import_button.font())
-        self.select_folder_button.setFixedHeight(
-            self.vocabulary_panel.import_button.sizeHint().height()
-        )
+        left_layout.addWidget(self.user_label)
+        left_layout.addLayout(account_layout)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.setChildrenCollapsible(False)
@@ -93,9 +130,10 @@ class MainWindow(QMainWindow):
         self.channel.registerObject("bridge", self.web_bridge)
         self.web_view.page().setWebChannel(self.channel)
 
-        html_path = self.project_root / "study_bench" / "web" / "passage.html"
+        html_path = self.project_root / "studybench" / "web" / "passage.html"
         self.web_view.setUrl(QUrl.fromLocalFile(str(html_path)))
 
+        self._refresh_account_controls()
         self.statusBar().showMessage("就绪", 5000)
 
     def _connect_signals(self):
@@ -105,6 +143,12 @@ class MainWindow(QMainWindow):
 
         self.web_bridge.vocabulary_changed.connect(self.refresh_vocabulary)
         self.web_bridge.gen_audio_requested.connect(self.start_gen_audio)
+        self.web_bridge.exercise_dirty_changed.connect(
+            self._exercise_dirty_changed
+        )
+        self.web_bridge.exercise_save_requested.connect(
+            self._save_exercise_answers_json
+        )
         self.web_bridge.message.connect(self.show_status)
         self.audio_generation_signals.result_ready.connect(
             self._gen_audio_finished
@@ -121,6 +165,10 @@ class MainWindow(QMainWindow):
         self.vocabulary_panel.highlight_visibility_changed.connect(
             self.set_vocabulary_highlights_visible
         )
+
+        self.register_button.clicked.connect(self.register_user)
+        self.sign_in_button.clicked.connect(self.sign_in)
+        self.sign_out_button.clicked.connect(self.sign_out)
 
     def _load_initial_library(self):
         saved = self.saved_settings.get("last_library_dir")
@@ -149,7 +197,7 @@ class MainWindow(QMainWindow):
             start_dir,
         )
         if selected:
-            self._load_library(Path(selected))
+            self._request_action("library", str(Path(selected)))
 
     def _load_library(self, library_dir):
         self.status_timer.stop()
@@ -181,19 +229,44 @@ class MainWindow(QMainWindow):
         self._queue_status_messages(messages)
 
     def open_passage(self, passage_dir):
+        target = str(Path(passage_dir))
+        if self._same_path(self.current_passage_dir, target):
+            return
+        self._request_action("passage", target)
+
+    def _open_passage_now(self, passage_dir):
+        passage_dir = Path(passage_dir)
+        target_book_dir = self.english_data.book_dir_for_passage(passage_dir)
+        book_changed = not self._same_path(
+            self.current_book_dir,
+            str(target_book_dir),
+        )
+
+        if book_changed:
+            self.current_book_dir = str(target_book_dir)
+            self._load_accounts_for_current_book()
+            self._activate_default_user()
+
         self.audio_player.stop()
 
         try:
-            payload, warnings = self.english_data.load_passage_payload(passage_dir)
+            payload, warnings = self.english_data.load_passage_payload(
+                passage_dir,
+                self.current_user_folder,
+            )
         except Exception as error:
             message = f"打开 Passage 失败：{error}"
             write_log(passage_dir, "ERROR", message)
             self.show_status(message)
+            if self.current_passage_dir:
+                self.english_tree.select_passage(self.current_passage_dir)
             return
 
         self.current_passage_dir = str(passage_dir)
         self.current_payload = payload
+        self.exercise_dirty = False
         self.web_bridge.set_passage(passage_dir)
+        self.english_tree.select_passage(self.current_passage_dir)
 
         self._render_current_passage()
         self.refresh_vocabulary()
@@ -201,6 +274,299 @@ class MainWindow(QMainWindow):
             write_log(passage_dir, "WARN", warning)
         self._log_passage_opened()
         self._queue_status_messages(warnings)
+
+    def register_user(self):
+        if not self.current_book_dir:
+            return
+
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("Register")
+        dialog.setLabelText("Username:")
+        dialog.setInputMode(QInputDialog.InputMode.TextInput)
+        dialog.setFont(self.account_font)
+        if not dialog.exec():
+            return
+        username = dialog.textValue()
+
+        try:
+            registration = self.english_data.validate_new_username(
+                self.current_book_dir,
+                username,
+            )
+        except Exception as error:
+            self.show_status(str(error))
+            return
+
+        self._request_action("register", registration)
+
+    def sign_in(self):
+        candidates = self._sign_in_candidates()
+        if not candidates:
+            return
+
+        names = []
+        for account in candidates:
+            names.append(account["username"])
+
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("Sign in")
+        dialog.setLabelText("User:")
+        dialog.setComboBoxItems(names)
+        dialog.setComboBoxEditable(False)
+        dialog.setFont(self.account_font)
+        if not dialog.exec():
+            return
+        selected = dialog.textValue()
+
+        target = None
+        for account in candidates:
+            if account["username"] == selected:
+                target = account
+                break
+        if target is None:
+            return
+
+        self._request_action("sign_in", target)
+
+    def sign_out(self):
+        if self.current_user_folder == DEFAULT_USER_FOLDER:
+            return
+        self._request_action("sign_out", None)
+
+    def _register_user_now(self, registration):
+        try:
+            account = self.english_data.register_user(
+                self.current_book_dir,
+                registration["username"],
+            )
+        except Exception as error:
+            self.show_status(f"注册失败：{error}")
+            return
+
+        self._load_accounts_for_current_book()
+        self.current_user_folder = account["folder"]
+        self.current_username = account["username"]
+        self.current_user_available = True
+        self._refresh_account_controls()
+        self._refresh_current_exercises()
+        self.show_status(f"已注册并登录：{self.current_username}")
+
+    def _sign_in_now(self, account):
+        try:
+            current_account = self.english_data.get_user_account(
+                self.current_book_dir,
+                account["folder"],
+            )
+        except Exception as error:
+            self._load_accounts_for_current_book()
+            self.show_status(f"登录失败：{error}")
+            return
+
+        self.current_user_folder = current_account["folder"]
+        self.current_username = current_account["username"]
+        self.current_user_available = True
+        self._refresh_account_controls()
+        self._refresh_current_exercises()
+        self.show_status(f"已登录：{self.current_username}")
+
+    def _sign_out_now(self):
+        self._activate_default_user()
+        self._refresh_current_exercises()
+        if self.current_user_available:
+            self.show_status("已切换到 Default User。")
+        else:
+            self.show_status("Default User 数据不可用，答案保存已禁用。")
+
+    def _activate_default_user(self):
+        self.current_user_folder = DEFAULT_USER_FOLDER
+        self.current_username = DEFAULT_USERNAME
+        self.current_user_available = False
+
+        if self.current_book_dir:
+            try:
+                account = self.english_data.get_user_account(
+                    self.current_book_dir,
+                    DEFAULT_USER_FOLDER,
+                )
+                self.current_username = account["username"]
+                self.current_user_available = True
+            except Exception:
+                self.current_user_available = False
+
+        self._refresh_account_controls()
+
+    def _load_accounts_for_current_book(self):
+        self.current_accounts = []
+        if not self.current_book_dir:
+            self._refresh_account_controls()
+            return
+
+        try:
+            result = self.english_data.list_user_accounts(self.current_book_dir)
+            self.current_accounts = result[0]
+        except Exception:
+            self.current_accounts = []
+
+        self._refresh_account_controls()
+
+    def _sign_in_candidates(self):
+        result = []
+        for account in self.current_accounts:
+            folder = account.get("folder")
+            if folder == DEFAULT_USER_FOLDER:
+                continue
+            if folder == self.current_user_folder:
+                continue
+            result.append(account)
+        return result
+
+    def _refresh_account_controls(self):
+        self.user_label.setText("User: " + self.current_username)
+        has_book = bool(self.current_book_dir)
+        self.register_button.setEnabled(has_book)
+        self.sign_in_button.setEnabled(has_book and bool(self._sign_in_candidates()))
+        self.sign_out_button.setEnabled(
+            has_book
+            and self.current_user_available
+            and self.current_user_folder != DEFAULT_USER_FOLDER
+        )
+
+    def _refresh_current_exercises(self):
+        if not self.current_passage_dir or self.current_payload is None:
+            return
+
+        try:
+            questions, warnings = self.english_data.load_exercise_payload(
+                self.current_passage_dir,
+                self.current_user_folder,
+                self.current_payload.get("title", "Current Passage"),
+            )
+        except Exception as error:
+            self.show_status(f"Exercise 无法刷新：{error}")
+            return
+
+        self.current_payload["questions"] = questions
+        self.exercise_dirty = False
+        if self.page_loaded:
+            payload = json.dumps(questions, ensure_ascii=False)
+            self.web_view.page().runJavaScript(
+                "window.setExercises(" + payload + ");"
+            )
+            self._set_exercise_save_allowed(self.current_user_available)
+        self._queue_status_messages(warnings)
+
+    def _exercise_dirty_changed(self, dirty):
+        self.exercise_dirty = bool(dirty)
+
+    def _save_exercise_answers_json(self, answers_json):
+        if not self.current_passage_dir:
+            return
+        if not self.current_user_available:
+            self.show_status("当前账户数据不可用，无法保存答案。")
+            self._cancel_pending_action_after_save_failure()
+            return
+
+        try:
+            answers = json.loads(answers_json)
+            self.english_data.save_exercise_answers(
+                self.current_passage_dir,
+                self.current_user_folder,
+                answers,
+            )
+        except Exception as error:
+            self.show_status(f"保存答案失败：{error}")
+            self._cancel_pending_action_after_save_failure()
+            return
+
+        if self.current_payload is not None:
+            questions = self.current_payload.get("questions", [])
+            for index, answer in enumerate(answers):
+                if index >= len(questions):
+                    break
+                questions[index]["answer"] = {
+                    "user_answer": answer.get("user_answer", ""),
+                    "user_note": answer.get("user_note", ""),
+                }
+
+        self.exercise_dirty = False
+        if self.page_loaded:
+            self.web_view.page().runJavaScript("window.markExerciseSaved();")
+        self.show_status("答案已保存。")
+        if self.pending_action_kind:
+            kind = self.pending_action_kind
+            value = self.pending_action_value
+            self.pending_action_kind = ""
+            self.pending_action_value = None
+            self._execute_action(kind, value)
+
+    def _set_exercise_save_allowed(self, allowed):
+        if not self.page_loaded:
+            return
+        value = "true" if allowed else "false"
+        self.web_view.page().runJavaScript(
+            "window.setExerciseSaveAllowed(" + value + ");"
+        )
+
+    def _request_action(self, kind, value):
+        if not self.exercise_dirty:
+            self._execute_action(kind, value)
+            return
+
+        box = QMessageBox(self)
+        box.setWindowTitle("Unsaved answers")
+        box.setText("当前回答尚未保存。")
+        save_button = box.addButton("Save", QMessageBox.ButtonRole.AcceptRole)
+        discard_button = box.addButton(
+            "Discard",
+            QMessageBox.ButtonRole.DestructiveRole,
+        )
+        cancel_button = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+
+        clicked = box.clickedButton()
+        if clicked is save_button:
+            self.pending_action_kind = kind
+            self.pending_action_value = value
+            if self.page_loaded:
+                self.web_view.page().runJavaScript(
+                    "window.submitExerciseAnswers();"
+                )
+            return
+
+        if clicked is discard_button:
+            self.exercise_dirty = False
+            self._execute_action(kind, value)
+            return
+
+        if clicked is cancel_button:
+            self._restore_current_tree_selection()
+            return
+
+        self._restore_current_tree_selection()
+
+    def _execute_action(self, kind, value):
+        if kind == "library":
+            self._load_library(Path(value))
+        elif kind == "passage":
+            self._open_passage_now(value)
+        elif kind == "register":
+            self._register_user_now(value)
+        elif kind == "sign_in":
+            self._sign_in_now(value)
+        elif kind == "sign_out":
+            self._sign_out_now()
+        elif kind == "close":
+            QTimer.singleShot(0, self.close)
+
+    def _cancel_pending_action_after_save_failure(self):
+        if self.pending_action_kind == "passage":
+            self._restore_current_tree_selection()
+        self.pending_action_kind = ""
+        self.pending_action_value = None
+
+    def _restore_current_tree_selection(self):
+        if self.current_passage_dir:
+            self.english_tree.select_passage(self.current_passage_dir)
 
     def refresh_vocabulary(self):
         if not self.current_passage_dir:
@@ -621,6 +987,7 @@ class MainWindow(QMainWindow):
             "window.renderPassage(" + payload + ");"
         )
         self._set_gen_audio_enabled(not self.audio_generation_running)
+        self._set_exercise_save_allowed(self.current_user_available)
 
     def _clear_web_passage(self):
         if self.page_loaded:
@@ -628,11 +995,20 @@ class MainWindow(QMainWindow):
 
     def _clear_workspace(self):
         self.audio_player.stop()
+        self.current_book_dir = ""
         self.current_passage_dir = ""
         self.current_payload = None
         self.current_words = []
+        self.current_accounts = []
+        self.current_user_folder = DEFAULT_USER_FOLDER
+        self.current_username = DEFAULT_USERNAME
+        self.current_user_available = False
+        self.exercise_dirty = False
+        self.pending_action_kind = ""
+        self.pending_action_value = None
         self.web_bridge.clear_passage()
         self.vocabulary_panel.set_words([])
+        self._refresh_account_controls()
         self._clear_web_passage()
 
     def _audio_state_changed(self, state, owner):
@@ -667,6 +1043,11 @@ class MainWindow(QMainWindow):
         self.status_timer.start(5000)
 
     def closeEvent(self, event):
+        if self.exercise_dirty:
+            event.ignore()
+            self._request_action("close", None)
+            return
+
         try:
             handle = self.windowHandle()
             screen = handle.screen() if handle is not None else QApplication.primaryScreen()

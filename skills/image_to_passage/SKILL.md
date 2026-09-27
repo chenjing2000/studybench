@@ -107,11 +107,7 @@ Question numbers are derived from array order and are not stored as IDs.
     {"key": "B", "text": "Option B"}
   ],
   "reference_answer": "B",
-  "explanation": "A concise explanation based on the Passage.",
-  "answer": {
-    "user_answer": "",
-    "user_note": ""
-  }
+  "explanation": "A concise explanation based on the Passage."
 }
 ```
 
@@ -124,11 +120,7 @@ Preserve the visible option keys and option text in source order. `reference_ans
   "type": "fill_blank",
   "prompt": "The sentence contains exactly one ______.",
   "reference_answer": "answer",
-  "explanation": "A concise explanation based on the Passage.",
-  "answer": {
-    "user_answer": "",
-    "user_note": ""
-  }
+  "explanation": "A concise explanation based on the Passage."
 }
 ```
 
@@ -142,7 +134,7 @@ The full file is:
 
 with recognized questions appended in the same order as the source.
 
-When the source image does not print the answer or explanation, derive `reference_answer` and a concise `explanation` from the recognized Passage and question. Base them on Passage evidence; do not invent unsupported facts. Always initialize `answer.user_answer` and `answer.user_note` as empty strings.
+When the source image does not print the answer or explanation, derive `reference_answer` and a concise `explanation` from the recognized Passage and question. Base them on Passage evidence; do not invent unsupported facts. `exercise.json` contains textbook question data only; never add `answer`, `user_answer`, `user_note`, `username`, or `userdata` fields.
 
 ## Final validation
 
@@ -158,5 +150,5 @@ Before returning or writing files, verify:
 - every choice option key is unique within its question;
 - every choice `reference_answer` matches an option key;
 - every fill-blank `prompt` has exactly one `______`;
-- `answer.user_answer` and `answer.user_note` start empty;
+- no Question contains `answer`, `user_answer`, `user_note`, `username`, or `userdata`;
 - both output files are valid JSON with no Markdown wrappers or comments.

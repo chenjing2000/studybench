@@ -83,5 +83,22 @@ class EnglishTree(QTreeWidget):
             return
         self.passage_selected.emit(str(data["path"]))
 
+
+    def select_passage(self, passage_path):
+        target = str(Path(passage_path))
+        for book_index in range(self.topLevelItemCount()):
+            book_item = self.topLevelItem(book_index)
+            for passage_index in range(book_item.childCount()):
+                passage_item = book_item.child(passage_index)
+                data = passage_item.data(0, Qt.ItemDataRole.UserRole)
+                if not isinstance(data, dict):
+                    continue
+                if data.get("kind") != "passage":
+                    continue
+                if str(data.get("path", "")) == target:
+                    self.setCurrentItem(passage_item)
+                    return True
+        return False
+
     def _item_clicked(self, item, column):
         self.emit_passage_for_item(item)

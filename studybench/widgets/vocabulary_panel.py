@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 
 ACTION_BUTTON_SIZE = 16
-ACTION_BUTTON_GAP = 5
+ACTION_BUTTON_GAP = 3
 ACTION_BUTTON_RADIUS = 5
 ACTION_ICON_SIZE = 14
 ACTION_OVERLAY_WIDTH = ACTION_BUTTON_SIZE * 3 + ACTION_BUTTON_GAP * 2
@@ -118,8 +118,8 @@ class VocabularyPanel(QWidget):
         header.addWidget(title)
         header.addStretch(1)
 
-        self.highlight_button = QPushButton("显示")
-        self.highlight_button.setToolTip("显示/隐藏 Passage 中的生词高亮")
+        self.highlight_button = QPushButton("show")
+        self.highlight_button.setToolTip("show/hide Vocabulary highlights in the Passage")
         self.highlight_button.clicked.connect(self._toggle_highlights)
 
         self.export_button = QPushButton("导出")
@@ -129,7 +129,7 @@ class VocabularyPanel(QWidget):
         self.import_button.clicked.connect(self.import_requested.emit)
 
         header_button_width = 54
-        required_width = self.highlight_button.fontMetrics().horizontalAdvance("隐藏") + 16
+        required_width = self.highlight_button.fontMetrics().horizontalAdvance("show") + 16
         if required_width > header_button_width:
             header_button_width = required_width
         self.highlight_button.setFixedWidth(header_button_width)
@@ -322,7 +322,7 @@ class VocabularyPanel(QWidget):
 
     def _toggle_highlights(self):
         self.highlights_visible = not self.highlights_visible
-        self.highlight_button.setText("隐藏" if self.highlights_visible else "显示")
+        self.highlight_button.setText("hide" if self.highlights_visible else "show")
         self.highlight_visibility_changed.emit(self.highlights_visible)
 
     def vocabulary_highlights_visible(self):
