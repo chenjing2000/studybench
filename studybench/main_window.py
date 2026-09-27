@@ -82,26 +82,42 @@ class MainWindow(QMainWindow):
         self.web_view = QWebEngineView()
         self.vocabulary_panel = VocabularyPanel()
 
-        control_font = self.vocabulary_panel.import_button.font()
-        control_height = self.vocabulary_panel.import_button.sizeHint().height()
-        self.select_folder_button.setFont(control_font)
-        self.select_folder_button.setFixedHeight(control_height)
+        sidebar_button_height = 30
 
-        self.account_font = self.vocabulary_panel.highlight_button.font()
-        self.account_font.setBold(False)
+        select_folder_font = self.select_folder_button.font()
+        select_folder_font.setPointSize(10)
+        select_folder_font.setBold(False)
+        self.select_folder_button.setFont(select_folder_font)
+        self.select_folder_button.setFixedHeight(sidebar_button_height)
 
         self.user_label = QLabel("User: " + DEFAULT_USERNAME)
-        self.user_label.setFont(self.account_font)
+        user_label_font = self.user_label.font()
+        user_label_font.setPointSize(10)
+        user_label_font.setBold(False)
+        self.user_label.setFont(user_label_font)
 
-        self.register_button = QPushButton("Register")
-        self.sign_in_button = QPushButton("Sign in")
-        self.sign_out_button = QPushButton("Sign out")
-        self.register_button.setFont(self.account_font)
-        self.sign_in_button.setFont(self.account_font)
-        self.sign_out_button.setFont(self.account_font)
-        self.register_button.setFixedHeight(control_height)
-        self.sign_in_button.setFixedHeight(control_height)
-        self.sign_out_button.setFixedHeight(control_height)
+        self.register_button = QPushButton("register")
+        self.sign_in_button = QPushButton("sign in")
+        self.sign_out_button = QPushButton("sign out")
+
+        register_font = self.register_button.font()
+        register_font.setPointSize(10)
+        register_font.setBold(False)
+        self.register_button.setFont(register_font)
+
+        sign_in_font = self.sign_in_button.font()
+        sign_in_font.setPointSize(10)
+        sign_in_font.setBold(False)
+        self.sign_in_button.setFont(sign_in_font)
+
+        sign_out_font = self.sign_out_button.font()
+        sign_out_font.setPointSize(10)
+        sign_out_font.setBold(False)
+        self.sign_out_button.setFont(sign_out_font)
+
+        self.register_button.setFixedHeight(sidebar_button_height)
+        self.sign_in_button.setFixedHeight(sidebar_button_height)
+        self.sign_out_button.setFixedHeight(sidebar_button_height)
 
         account_layout = QHBoxLayout()
         account_layout.setContentsMargins(0, 0, 0, 0)
@@ -283,7 +299,11 @@ class MainWindow(QMainWindow):
         dialog.setWindowTitle("Register")
         dialog.setLabelText("Username:")
         dialog.setInputMode(QInputDialog.InputMode.TextInput)
-        dialog.setFont(self.account_font)
+        dialog.setStyleSheet(
+            "QLabel { font-size: 10pt; font-weight: normal; }"
+            "QLineEdit { font-size: 10pt; font-weight: normal; }"
+            "QPushButton { font-size: 10pt; font-weight: normal; }"
+        )
         if not dialog.exec():
             return
         username = dialog.textValue()
@@ -313,7 +333,11 @@ class MainWindow(QMainWindow):
         dialog.setLabelText("User:")
         dialog.setComboBoxItems(names)
         dialog.setComboBoxEditable(False)
-        dialog.setFont(self.account_font)
+        dialog.setStyleSheet(
+            "QLabel { font-size: 10pt; font-weight: normal; }"
+            "QComboBox { font-size: 10pt; font-weight: normal; }"
+            "QPushButton { font-size: 10pt; font-weight: normal; }"
+        )
         if not dialog.exec():
             return
         selected = dialog.textValue()
@@ -390,8 +414,11 @@ class MainWindow(QMainWindow):
                 )
                 self.current_username = account["username"]
                 self.current_user_available = True
-            except Exception:
+            except Exception as error:
                 self.current_user_available = False
+                self._queue_status_messages(
+                    [f"Default User 数据无法加载：{error}"]
+                )
 
         self._refresh_account_controls()
 
@@ -402,10 +429,16 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            result = self.english_data.list_user_accounts(self.current_book_dir)
-            self.current_accounts = result[0]
-        except Exception:
+            accounts, warnings = self.english_data.list_user_accounts(
+                self.current_book_dir
+            )
+            self.current_accounts = accounts
+            self._queue_status_messages(warnings)
+        except Exception as error:
             self.current_accounts = []
+            self._queue_status_messages(
+                [f"用户账户列表无法加载：{error}"]
+            )
 
         self._refresh_account_controls()
 

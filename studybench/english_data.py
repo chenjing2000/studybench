@@ -434,7 +434,16 @@ class EnglishData:
         self._validate_answer_sheet(answer_sheet, user_folder)
 
         passage_folder = passage_dir.name
-        answer_sheet["answers"][passage_folder] = normalized_answers
+        all_empty = True
+        for answer in normalized_answers:
+            if answer["user_answer"] or answer["user_note"]:
+                all_empty = False
+                break
+
+        if all_empty:
+            answer_sheet["answers"].pop(passage_folder, None)
+        else:
+            answer_sheet["answers"][passage_folder] = normalized_answers
         write_json_atomic(answer_path, answer_sheet)
 
     def get_segment_audio_path(self, passage_dir, sid, accent):
@@ -897,11 +906,11 @@ class EnglishData:
                     f"Default User 的 username 必须是 {DEFAULT_USERNAME}。"
                 )
         else:
-            clean_username, expected_folder = self._validate_registration_username(
+            clean_username, expected_folder = self._normalize_username_for_folder(
                 username
             )
             if clean_username != username:
-                raise ValueError("username 与注册时的完整用户名不一致。")
+                raise ValueError("username 与保存时的完整用户名不一致。")
             if expected_folder != user_folder:
                 raise ValueError("username 与用户文件夹名不匹配。")
 
@@ -950,19 +959,13 @@ class EnglishData:
             result.append(folder_name)
         return result
 
-    def _validate_registration_username(self, username):
+    def _normalize_username_for_folder(self, username):
         if not isinstance(username, str):
             raise ValueError("Username 必须是字符串。")
 
         clean_username = username.strip()
         if not clean_username:
             raise ValueError("Username 不能为空。")
-
-        if clean_username.casefold() in (
-            DEFAULT_USERNAME.casefold(),
-            DEFAULT_USER_FOLDER.casefold(),
-        ):
-            raise ValueError("该名称属于系统默认账户，不能注册。")
 
         for character in clean_username:
             if ord(character) < 32:
@@ -975,17 +978,25 @@ class EnglishData:
         if clean_username.endswith("."):
             raise ValueError("Username 不能以句点结尾。")
 
+        folder_name = clean_username.lower()
+        self._validate_user_folder_reference(folder_name)
+        return clean_username, folder_name
+
+    def _validate_registration_username(self, username):
+        clean_username, folder_name = self._normalize_username_for_folder(username)
+
+        if clean_username.casefold() in (
+            DEFAULT_USERNAME.casefold(),
+            DEFAULT_USER_FOLDER.casefold(),
+        ):
+            raise ValueError("该名称属于系统默认账户，不能注册。")
+
         effective_length = self._effective_username_length(clean_username)
         if effective_length < 8:
             raise ValueError(
                 "Username 有效长度不足：英文字母/数字至少 8 个，或中文字符至少 4 个。"
             )
 
-        folder_name = clean_username.lower()
-        if self._is_windows_reserved_name(folder_name):
-            raise ValueError("Username 会生成 Windows 保留文件名，不能注册。")
-
-        self._validate_user_folder_reference(folder_name)
         return clean_username, folder_name
 
     def _effective_username_length(self, username):
@@ -1035,6 +1046,8 @@ class EnglishData:
                 raise ValueError(f"非法用户文件夹名：{folder_name}")
         if folder_name.endswith("."):
             raise ValueError(f"用户文件夹名不能以句点结尾：{folder_name}")
+        if self._is_windows_reserved_name(folder_name):
+            raise ValueError(f"用户文件夹名是 Windows 保留名称：{folder_name}")
 
     def _validate_vocabulary(self, data):
         words = data.get("words")

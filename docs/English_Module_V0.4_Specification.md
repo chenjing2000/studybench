@@ -104,13 +104,13 @@ The left sidebar contains:
 
 ```text
 User: <full username>
-[Register] [Sign in] [Sign out]
+[register] [sign in] [sign out]
 ```
 
-- `Register`: simple username input; no password or profile data.
-- `Sign in`: drop-down of valid, already registered full usernames other than Default User and the current user.
-- `Sign out`: switches to Default User; disabled while Default User is active.
-- The account label, the three account buttons, and the Register/Sign in dialogs use the same non-bold font size as the right-panel `show` / `hide` button.
+- `register`: simple username input; no password or profile data.
+- `sign in`: drop-down of valid, already registered full usernames other than Default User and the current user.
+- `sign out`: switches to Default User; disabled while Default User is active.
+- The left account label and the three account buttons use independently hard-coded 10 pt non-bold fonts. The Register and Sign in dialogs keep their own independently hard-coded 11 pt non-bold fonts; no account font size is derived from another control.
 - no Book loaded: all three account controls are disabled.
 - switching Passage within the same Book preserves the current user.
 - switching Book resets to that Book's Default User.
@@ -218,15 +218,26 @@ This `answer` object is a UI payload only and must never be written back into `e
 
 Switching users refreshes only the Exercise section; Passage text, Vocabulary, highlighting, audio state, and reading scroll position are not intentionally reloaded.
 
-## 11. Explicit Save and dirty state
+## 11. Exercise actions, explicit Save, and dirty state
 
-The Exercise section contains one `Save` button at the bottom.
+When the current Passage has a non-empty Exercise, the bottom action row contains four equal-width buttons centered with a 15 px gap:
+
+```text
+Save / 选项提示 / 参考答案 / Clear
+```
+
+If `exercise.json` is absent, invalid, or has an empty `questions` array, the Exercise action row is not created.
 
 - editing choice/fill/note changes only the page state;
 - edits set `dirty = true` and enable Save;
-- Save submits the complete current Passage answer array in one operation;
-- successful Save atomically updates only the selected user's `answer_sheet.json` and clears dirty state;
-- failed Save leaves dirty state active.
+- successful Save atomically updates only the selected user's `answer_sheet.json`, clears dirty state, and disables Save;
+- failed Save leaves dirty state active;
+- when every saved answer and note for the current Passage is empty, Save removes that Passage key from `answer_sheet.json.answers` instead of storing an array of empty objects;
+- `Clear` only clears the current page and sets dirty; it never writes the answer sheet directly.
+
+`选项提示` currently checks answered `choice` questions only. Unanswered choices and all non-option question types are ignored. A wrong selected option is indicated only by changing that option text to `#c12c1f`; no score or correctness count is shown. Changing a choice clears its previous hint but does not automatically re-check the new choice.
+
+`参考答案` is enabled when at least one Question is complete. It uses a click-time snapshot: opening it displays `reference_answer` and `explanation` only for Questions that are complete at that moment. Questions completed later are not added automatically. The next click hides all reference content; opening it again builds a new snapshot. A displayed Question that becomes incomplete is removed from the snapshot immediately and is not automatically re-added.
 
 Before changing Passage, Book/Library, account, or closing the program while dirty, StudyBench asks:
 
@@ -235,6 +246,8 @@ Save / Discard / Cancel
 ```
 
 Save writes to the old/current user before the requested transition. Discard continues without writing. Cancel keeps the current context. A failed Save cancels the pending transition.
+
+UI font sizes are explicit fixed values rather than being derived from another control's font size. The left account label and account buttons use independently hard-coded 10 pt non-bold fonts; the Register and Sign in dialogs each keep their own independently hard-coded 11 pt non-bold fonts.
 
 ## 12. Optional-data failures
 

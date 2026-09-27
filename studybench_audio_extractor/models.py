@@ -17,12 +17,7 @@ class MdictLookupResult:
 
 
 class TtsConfig:
-    def __init__(
-        self,
-        uk_voice="en-GB-SoniaNeural",
-        us_voice="en-US-JennyNeural",
-        wait_seconds=2.0,
-    ):
+    def __init__(self, uk_voice, us_voice, wait_seconds):
         self.uk_voice = uk_voice
         self.us_voice = us_voice
         self.wait_seconds = wait_seconds

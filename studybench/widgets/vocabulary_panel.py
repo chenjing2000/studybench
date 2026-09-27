@@ -22,6 +22,7 @@ ACTION_BUTTON_RADIUS = 5
 ACTION_ICON_SIZE = 14
 ACTION_OVERLAY_WIDTH = ACTION_BUTTON_SIZE * 3 + ACTION_BUTTON_GAP * 2
 ACTION_ICON_DIR = Path(__file__).resolve().parents[1] / "resources" / "icons" / "vocabulary"
+SIDEBAR_BUTTON_HEIGHT = 30
 
 
 ACTION_BUTTON_STYLE = (
@@ -96,10 +97,6 @@ class VocabularyPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        panel_font = self.font()
-        panel_font.setPointSize(12)
-        self.setFont(panel_font)
-
         outer = QVBoxLayout(self)
         outer.setContentsMargins(10, 10, 10, 10)
         outer.setSpacing(8)
@@ -113,17 +110,31 @@ class VocabularyPanel(QWidget):
         header.setSpacing(6)
         title = QLabel("Vocabulary")
         title_font = title.font()
+        title_font.setPointSize(12)
         title_font.setBold(True)
         title.setFont(title_font)
         header.addWidget(title)
         header.addStretch(1)
 
         self.highlight_button = QPushButton("show")
+        highlight_font = self.highlight_button.font()
+        highlight_font.setPointSize(10)
+        highlight_font.setBold(False)
+        self.highlight_button.setFont(highlight_font)
         self.highlight_button.setToolTip("show/hide Vocabulary highlights in the Passage")
         self.highlight_button.clicked.connect(self._toggle_highlights)
 
         self.export_button = QPushButton("导出")
+        export_font = self.export_button.font()
+        export_font.setPointSize(10)
+        export_font.setBold(False)
+        self.export_button.setFont(export_font)
+
         self.import_button = QPushButton("导入")
+        import_font = self.import_button.font()
+        import_font.setPointSize(10)
+        import_font.setBold(False)
+        self.import_button.setFont(import_font)
         self.import_button.setToolTip("导入完整 vocabulary.json，并整体替换当前词汇表")
         self.export_button.clicked.connect(self.export_requested.emit)
         self.import_button.clicked.connect(self.import_requested.emit)
@@ -135,6 +146,9 @@ class VocabularyPanel(QWidget):
         self.highlight_button.setFixedWidth(header_button_width)
         self.export_button.setFixedWidth(header_button_width)
         self.import_button.setFixedWidth(header_button_width)
+        self.highlight_button.setFixedHeight(SIDEBAR_BUTTON_HEIGHT)
+        self.export_button.setFixedHeight(SIDEBAR_BUTTON_HEIGHT)
+        self.import_button.setFixedHeight(SIDEBAR_BUTTON_HEIGHT)
 
         header.addWidget(self.highlight_button)
         header.addSpacing(12)
@@ -188,16 +202,6 @@ class VocabularyPanel(QWidget):
             "QWidget#vocabularyEntry { background-color: " + background + "; }"
         )
 
-        body_font = block.font()
-        body_font.setPointSize(11)
-        block.setFont(body_font)
-
-        detail_font = block.font()
-        detail_size = detail_font.pointSize() - 1
-        if detail_size < 1:
-            detail_size = 1
-        detail_font.setPointSize(detail_size)
-
         content_layout = QVBoxLayout(block)
         content_layout.setContentsMargins(6, 7, 4, 7)
         content_layout.setSpacing(4)
@@ -222,11 +226,18 @@ class VocabularyPanel(QWidget):
         phonetic_row.setSpacing(5)
 
         uk_label = QLabel(entry.get("phonetic_uk") or "—")
-        uk_label.setFont(detail_font)
+        uk_label_font = uk_label.font()
+        uk_label_font.setPointSize(10)
+        uk_label_font.setBold(False)
+        uk_label.setFont(uk_label_font)
         uk_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         phonetic_row.addWidget(uk_label)
 
         uk_button = QToolButton()
+        uk_button_font = uk_button.font()
+        uk_button_font.setPointSize(11)
+        uk_button_font.setBold(False)
+        uk_button.setFont(uk_button_font)
         uk_button.setText("🔊")
         uk_button.setToolTip("英/Br")
         uk_button.setProperty("word", entry.get("word", ""))
@@ -236,11 +247,18 @@ class VocabularyPanel(QWidget):
         phonetic_row.addWidget(uk_button)
 
         us_label = QLabel(entry.get("phonetic_us") or "—")
-        us_label.setFont(detail_font)
+        us_label_font = us_label.font()
+        us_label_font.setPointSize(10)
+        us_label_font.setBold(False)
+        us_label.setFont(us_label_font)
         us_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         phonetic_row.addWidget(us_label)
 
         us_button = QToolButton()
+        us_button_font = us_button.font()
+        us_button_font.setPointSize(11)
+        us_button_font.setBold(False)
+        us_button.setFont(us_button_font)
         us_button.setText("🔊")
         us_button.setToolTip("美/Am")
         us_button.setProperty("word", entry.get("word", ""))
@@ -260,14 +278,20 @@ class VocabularyPanel(QWidget):
                     "<p style='margin:0; padding-left:2em; text-indent:-2em;'>"
                     f"<b>{pos}</b>&nbsp;&nbsp;{text}</p>"
                 )
-                label.setFont(detail_font)
+                meaning_font = label.font()
+                meaning_font.setPointSize(10)
+                meaning_font.setBold(False)
+                label.setFont(meaning_font)
                 label.setWordWrap(True)
                 label.setTextFormat(Qt.TextFormat.RichText)
                 label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
                 content_layout.addWidget(label)
         else:
             label = QLabel("尚未补充词性和含义")
-            label.setFont(detail_font)
+            empty_meaning_font = label.font()
+            empty_meaning_font.setPointSize(10)
+            empty_meaning_font.setBold(False)
+            label.setFont(empty_meaning_font)
             label.setStyleSheet("color: palette(mid);")
             content_layout.addWidget(label)
 

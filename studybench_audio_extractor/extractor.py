@@ -10,9 +10,9 @@ def run(
     root_dir,
     mdx_path,
     mdd_path,
-    uk_voice="en-GB-SoniaNeural",
-    us_voice="en-US-JennyNeural",
-    wait_seconds=2.0,
+    uk_voice,
+    us_voice,
+    wait_seconds,
     vocabulary_lock=None,
 ):
     """Process passage.json and vocabulary.json in one Passage folder."""

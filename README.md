@@ -159,7 +159,7 @@ User answers are stored separately in the selected account's `answer_sheet.json`
 
 The Passage folder name selects the answer array, and the Question array index selects the individual answer. If a Question is added later, missing answers are shown as empty. When the user next presses Save, the current Passage's answer array is rewritten to match the current Question count. Other Passage answers remain untouched.
 
-The center Exercise area has one `Save` button at the bottom. Editing a radio choice, fill blank, or note only marks the page dirty; it does not write JSON immediately. `Save` writes the complete current Passage answer array atomically. Leaving the current answer context with unsaved edits prompts `Save / Discard / Cancel`.
+When the current Passage has Exercise questions, the center Exercise area shows `Save / 选项提示 / 参考答案 / Clear` at the bottom. Passages without Exercise questions show no action row. Editing a radio choice, fill blank, or note only marks the page dirty; it does not write JSON immediately. `Save` writes the complete current Passage answer array atomically. Leaving the current answer context with unsaved edits prompts `Save / Discard / Cancel`.
 
 ## Lightweight accounts
 
@@ -170,11 +170,11 @@ Display name: Default User
 Folder:       default_user
 ```
 
-It is created automatically if missing. Program startup and every Book switch use Default User. The left sidebar shows the complete current username and three buttons: `Register`, `Sign in`, and `Sign out`.
+It is created automatically if missing. Program startup and every Book switch use Default User. The left sidebar shows the complete current username and three buttons: `register`, `sign in`, and `sign out`.
 
-- `Register` asks only for a username, creates its user folder and `answer_sheet.json`, adds the folder to `book.json.userdata`, then signs in automatically.
-- `Sign in` is a drop-down of already registered full usernames; there is no password.
-- `Sign out` switches back to Default User and is disabled while Default User is active.
+- `register` asks only for a username, creates its user folder and `answer_sheet.json`, adds the folder to `book.json.userdata`, then signs in automatically.
+- `sign in` is a drop-down of already registered full usernames; there is no password.
+- `sign out` switches back to Default User and is disabled while Default User is active.
 - switching Passage within the same Book keeps the current account; switching Book returns to that Book's Default User.
 
 For normal accounts, the folder name is the trimmed full username converted to lowercase. Other legal filename characters are preserved, so names such as `Chen Jing`, `Abcd_1234`, `Abcd+1234`, and `张三李四` are supported. Windows-illegal filename characters and reserved names are rejected. Username effective length must be at least 8, where ASCII letters/digits count as 1 and Chinese characters count as 2.

@@ -69,7 +69,7 @@ def test_vocabulary_phonetic_merge_preserves_word_added_during_generation(tmp_pa
     stats = process_vocabulary(
         vocabulary_path,
         mdict_provider=ConcurrentEditProvider(vocabulary_path),
-        tts_config=TtsConfig(),
+        tts_config=TtsConfig("uk-test", "us-test", 0),
         vocabulary_lock=lock,
     )
 
@@ -114,6 +114,9 @@ def test_extractor_processes_only_current_passage_directory(tmp_path, monkeypatc
         root_dir=tmp_path,
         mdx_path=tmp_path / "unused.mdx",
         mdd_path=tmp_path / "unused.mdd",
+        uk_voice="uk-test",
+        us_voice="us-test",
+        wait_seconds=0,
     )
 
     assert processed == [root_passage, root_vocabulary]
@@ -165,7 +168,7 @@ def test_passage_stats_count_processed_skipped_and_failed(tmp_path):
 
     stats = process_passage(
         passage_path,
-        tts_config=TtsConfig(),
+        tts_config=TtsConfig("uk-test", "us-test", 0),
         tts_generate=fake_tts,
     )
 
@@ -225,7 +228,7 @@ def test_vocabulary_stats_count_processed_skipped_and_failed(tmp_path):
     stats = process_vocabulary(
         vocabulary_path,
         mdict_provider=Provider(),
-        tts_config=TtsConfig(),
+        tts_config=TtsConfig("uk-test", "us-test", 0),
     )
 
     assert stats.items_total == 3

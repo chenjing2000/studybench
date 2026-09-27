@@ -9,14 +9,8 @@ _LINK_RE = re.compile(r"^\s*@@@LINK=(.+?)\s*$", re.IGNORECASE | re.DOTALL)
 
 
 class MdictProvider:
-    def __init__(self, mdx_path=None, mdd_path=None, backend=None):
-        if backend is None:
-            if mdx_path is None or mdd_path is None:
-                raise ValueError(
-                    "mdx_path and mdd_path are required when backend is not supplied"
-                )
-            backend = MdictUtilsBackend(mdx_path, mdd_path)
-        self._backend = backend
+    def __init__(self, mdx_path, mdd_path):
+        self._backend = MdictUtilsBackend(mdx_path, mdd_path)
         self._cache = {}
 
     def _lookup_mdx_records(self, word):

@@ -142,16 +142,20 @@ def test_vocabulary_entry_actions_float_above_content_and_follow_entry_resize():
     assert "ScrollBarAlwaysOff" in source
 
 
-def test_vocabulary_panel_uses_separate_phonetic_row_and_smaller_detail_font():
+def test_vocabulary_panel_uses_explicit_independent_font_sizes():
     source = (
         PROJECT_ROOT / "studybench" / "widgets" / "vocabulary_panel.py"
     ).read_text(encoding="utf-8")
     assert "word_row = QHBoxLayout()" in source
     assert "phonetic_row = QHBoxLayout()" in source
-    assert "detail_size = detail_font.pointSize() - 1" in source
-    assert "uk_label.setFont(detail_font)" in source
-    assert "us_label.setFont(detail_font)" in source
-    assert "label.setFont(detail_font)" in source
+    assert "word_font.setPointSize(11)" in source
+    assert "uk_label_font.setPointSize(10)" in source
+    assert "us_label_font.setPointSize(10)" in source
+    assert "meaning_font.setPointSize(10)" in source
+    assert "empty_meaning_font.setPointSize(10)" in source
+    assert "uk_button_font.setPointSize(11)" in source
+    assert "us_button_font.setPointSize(11)" in source
+    assert "pointSize() - 1" not in source
     assert "word_label.setWordWrap(True)" in source
 
 
@@ -255,9 +259,9 @@ def test_exercise_uses_explicit_save_instead_of_live_file_writes():
 
 def test_account_controls_and_dirty_guard_are_present():
     source = (PROJECT_ROOT / "studybench" / "main_window.py").read_text(encoding="utf-8")
-    assert 'QPushButton("Register")' in source
-    assert 'QPushButton("Sign in")' in source
-    assert 'QPushButton("Sign out")' in source
+    assert 'QPushButton("register")' in source
+    assert 'QPushButton("sign in")' in source
+    assert 'QPushButton("sign out")' in source
     assert 'QLabel("User: " + DEFAULT_USERNAME)' in source
     assert 'box.addButton("Save"' in source
     assert '"Discard"' in source
@@ -265,16 +269,31 @@ def test_account_controls_and_dirty_guard_are_present():
     assert 'self._request_action("close", None)' in source
 
 
-def test_account_controls_and_dialogs_match_show_hide_font_without_bold():
+def test_account_controls_and_dialogs_use_independent_hard_coded_fonts():
     source = (PROJECT_ROOT / "studybench" / "main_window.py").read_text(encoding="utf-8")
-    assert 'self.account_font = self.vocabulary_panel.highlight_button.font()' in source
-    assert 'self.account_font.setBold(False)' in source
-    assert 'self.user_label.setFont(self.account_font)' in source
-    assert 'self.register_button.setFont(self.account_font)' in source
-    assert 'self.sign_in_button.setFont(self.account_font)' in source
-    assert 'self.sign_out_button.setFont(self.account_font)' in source
-    assert 'dialog.setWindowTitle("Register")' in source
-    assert 'dialog.setFont(self.account_font)' in source
+    assert "self.account_font" not in source
+    assert "user_label_font.setPointSize(10)" in source
+    assert "register_font.setPointSize(10)" in source
+    assert "sign_in_font.setPointSize(10)" in source
+    assert "sign_out_font.setPointSize(10)" in source
+    assert "user_label_font.setBold(False)" in source
+    assert "register_font.setBold(False)" in source
+    assert "sign_in_font.setBold(False)" in source
+    assert "sign_out_font.setBold(False)" in source
+    register_source = source.split("    def register_user(self):", 1)[1].split(
+        "    def sign_in(self):", 1
+    )[0]
+    sign_in_source = source.split("    def sign_in(self):", 1)[1].split(
+        "    def _sign_out", 1
+    )[0]
+    assert 'dialog.setWindowTitle("Register")' in register_source
+    assert '"QLabel { font-size: 10pt; font-weight: normal; }"' in register_source
+    assert '"QLineEdit { font-size: 10pt; font-weight: normal; }"' in register_source
+    assert '"QPushButton { font-size: 10pt; font-weight: normal; }"' in register_source
+    assert '"QLabel { font-size: 10pt; font-weight: normal; }"' in sign_in_source
+    assert '"QComboBox { font-size: 10pt; font-weight: normal; }"' in sign_in_source
+    assert '"QPushButton { font-size: 10pt; font-weight: normal; }"' in sign_in_source
+    assert "dialog.setFont(" not in source
     assert 'QInputDialog.getText(' not in source
     assert 'QInputDialog.getItem(' not in source
 
@@ -354,8 +373,117 @@ def test_v040_english_spec_and_version_are_current():
     assert "Save / Discard / Cancel" in spec_text
 
     pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'version = "0.4.1"' in pyproject
+    assert 'version = "0.4.3"' in pyproject
 
 def test_unused_clear_all_answers_api_is_removed():
     source = (PROJECT_ROOT / "studybench" / "english_data.py").read_text(encoding="utf-8")
     assert "def clear_all_answers" not in source
+
+
+def test_exercise_v042_action_row_hint_reference_and_clear_contract():
+    js = (PROJECT_ROOT / "studybench" / "web" / "passage.js").read_text(encoding="utf-8")
+    css = (PROJECT_ROOT / "studybench" / "web" / "passage.css").read_text(encoding="utf-8")
+
+    assert 'saveButton.textContent = "Save"' in js
+    assert 'hintButton.textContent = "选项提示"' in js
+    assert 'referenceButton.textContent = "参考答案"' in js
+    assert 'clearButton.textContent = "Clear"' in js
+    assert 'actionRow.className = "exercise-action-row"' in js
+    assert 'className = "control-button exercise-action-button"' in js
+
+    no_questions = js.find('if (!questions.length) {')
+    action_row = js.find('const actionRow = document.createElement("div");')
+    assert no_questions >= 0
+    assert action_row > no_questions
+
+    assert '.exercise-action-row {' in css
+    assert 'justify-content: center;' in css
+    assert 'gap: 15px;' in css
+    assert '.exercise-action-button {' in css
+    assert 'width: 90px;' in css
+
+    assert 'saveButton.disabled = !exerciseSaveAllowed || !exerciseDirty;' in js
+    assert 'hintButton.disabled = !exerciseSaveAllowed || !hasAnsweredChoiceQuestion();' in js
+    assert 'referenceButton.disabled = !exerciseSaveAllowed || !hasCompletedQuestion();' in js
+    assert 'clearButton.disabled = !exerciseSaveAllowed;' in js
+
+    assert 'question.dataset.questionType !== "choice"' in js
+    assert 'checked.value === question.dataset.referenceAnswer' in js
+    assert 'optionText.classList.add("option-hint-error")' in js
+    assert '.option-hint-error {' in css
+    assert 'color: #c12c1f;' in css
+    assert 'background-color: #c12c1f' not in css
+    assert '5 / 9' not in js
+    assert '正确率' not in js
+
+    assert '.answer-info {' in css
+    assert 'display: none;' in css
+    assert '.question.reference-visible .answer-info {' in css
+    assert 'function toggleReferenceAnswers()' in js
+    assert 'if (isQuestionComplete(question)) {' in js
+    assert 'question.classList.add("reference-visible")' in js
+    assert 'function updateReferenceVisibilityAfterEdit(question)' in js
+
+    clear_start = js.find('function clearExercisePage()')
+    collect_start = js.find('function collectExerciseAnswers()', clear_start)
+    clear_source = js[clear_start:collect_start]
+    assert 'setExerciseDirty(true);' in clear_source
+    assert 'bridge.' not in clear_source
+    assert 'hideReferenceAnswers();' in clear_source
+    assert 'clearAllOptionHints();' in clear_source
+
+
+def test_ui_font_sizes_are_explicit_and_not_derived_from_other_control_sizes():
+    main_source = (PROJECT_ROOT / "studybench" / "main_window.py").read_text(encoding="utf-8")
+    vocabulary_source = (PROJECT_ROOT / "studybench" / "widgets" / "vocabulary_panel.py").read_text(encoding="utf-8")
+    css = (PROJECT_ROOT / "studybench" / "web" / "passage.css").read_text(encoding="utf-8")
+
+    assert "select_folder_font.setPointSize(10)" in main_source
+    assert "user_label_font.setPointSize(10)" in main_source
+    assert "register_font.setPointSize(10)" in main_source
+    assert "sign_in_font.setPointSize(10)" in main_source
+    assert "sign_out_font.setPointSize(10)" in main_source
+    assert "self.vocabulary_panel.import_button.font()" not in main_source
+    assert "self.vocabulary_panel.highlight_button.font()" not in main_source
+
+    assert "title_font.setPointSize(12)" in vocabulary_source
+    assert "highlight_font.setPointSize(10)" in vocabulary_source
+    assert "export_font.setPointSize(10)" in vocabulary_source
+    assert "import_font.setPointSize(10)" in vocabulary_source
+    assert "pointSize()" not in vocabulary_source
+
+    assert "font-size: 1.35rem" not in css
+    assert "font-size: 1.2rem" not in css
+    assert "font: inherit" not in css
+    assert "#passageTitle" in css and "font-size: 16pt;" in css
+    assert ".exercise-title" in css and "font-size: 14pt;" in css
+    assert ".paragraph-text" in css and "font-size: 12pt;" in css
+    assert ".fill-input" in css and "font-size: 12pt;" in css
+    assert ".user-note" in css and "font-size: 12pt;" in css
+    assert "import_button.sizeHint()" not in main_source
+    assert "sidebar_button_height = 30" in main_source
+    assert "SIDEBAR_BUTTON_HEIGHT = 30" in vocabulary_source
+    assert "self.select_folder_button.setFixedHeight(sidebar_button_height)" in main_source
+    assert "self.register_button.setFixedHeight(sidebar_button_height)" in main_source
+    assert "self.sign_in_button.setFixedHeight(sidebar_button_height)" in main_source
+    assert "self.sign_out_button.setFixedHeight(sidebar_button_height)" in main_source
+    assert "self.highlight_button.setFixedHeight(SIDEBAR_BUTTON_HEIGHT)" in vocabulary_source
+    assert "self.export_button.setFixedHeight(SIDEBAR_BUTTON_HEIGHT)" in vocabulary_source
+    assert "self.import_button.setFixedHeight(SIDEBAR_BUTTON_HEIGHT)" in vocabulary_source
+    assert ".exercise-action-button {" in css
+    assert "width: 90px;" in css
+
+
+def test_extractor_defaults_and_mdict_backend_injection_are_removed():
+    models = (PROJECT_ROOT / "studybench_audio_extractor" / "models.py").read_text(encoding="utf-8")
+    extractor = (PROJECT_ROOT / "studybench_audio_extractor" / "extractor.py").read_text(encoding="utf-8")
+    provider = (PROJECT_ROOT / "studybench_audio_extractor" / "mdict_provider.py").read_text(encoding="utf-8")
+
+    assert 'uk_voice="en-GB-SoniaNeural"' not in models
+    assert 'us_voice="en-US-JennyNeural"' not in models
+    assert 'wait_seconds=2.0' not in models
+    assert 'uk_voice="en-GB-SoniaNeural"' not in extractor
+    assert 'us_voice="en-US-JennyNeural"' not in extractor
+    assert 'wait_seconds=2.0' not in extractor
+    assert "backend=None" not in provider
+    assert "def __init__(self, mdx_path, mdd_path):" in provider

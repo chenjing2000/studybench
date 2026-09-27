@@ -451,6 +451,38 @@ def test_username_rules_reject_short_illegal_reserved_and_default_names(data):
         data.validate_new_username(book_dir, "Default User")
 
 
+def test_existing_short_username_is_not_rejected_by_registration_length_rule(data):
+    book_dir = data.library_root / "english_reading"
+    data.load_library()
+
+    folder = "abc"
+    user_dir = book_dir / "userdata" / folder
+    user_dir.mkdir(parents=True)
+    (user_dir / "answer_sheet.json").write_text(
+        json.dumps(
+            {"username": "Abc", "answers": {}},
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    book_path = book_dir / "book.json"
+    book = json.loads(book_path.read_text(encoding="utf-8"))
+    book["userdata"].append(folder)
+    book_path.write_text(
+        json.dumps(book, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    account = data.get_user_account(book_dir, folder)
+    assert account == {"folder": "abc", "username": "Abc"}
+
+    with pytest.raises(ValueError, match="有效长度不足"):
+        data.validate_new_username(book_dir, "Abc")
+
+
 def test_register_user_uses_full_username_and_folder_collision(data):
     book_dir = data.library_root / "english_reading"
     data.load_library()
@@ -648,3 +680,39 @@ def test_bad_optional_exercise_does_not_reject_book(data):
     assert payload["questions"] == []
     assert len(warnings) == 1
     assert "exercise.json" in warnings[0]
+
+
+def test_saving_all_empty_exercise_answers_removes_current_passage_key(data):
+    book_dir = data.library_root / "english_reading"
+    passage_dir = sample_passage_dir(data)
+    data.load_library()
+
+    answer_path = book_dir / "userdata" / DEFAULT_USER_FOLDER / "answer_sheet.json"
+    answer_sheet = json.loads(answer_path.read_text(encoding="utf-8"))
+    answer_sheet["answers"]["human_origins"] = [
+        {"user_answer": "origins", "user_note": "old"},
+        {"user_answer": "B", "user_note": ""},
+    ]
+    answer_sheet["answers"]["another_passage"] = [
+        {"user_answer": "keep", "user_note": "keep"}
+    ]
+    answer_path.write_text(
+        json.dumps(answer_sheet, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    empty_answers = [
+        {"user_answer": "", "user_note": ""},
+        {"user_answer": "", "user_note": ""},
+    ]
+    data.save_exercise_answers(
+        passage_dir,
+        DEFAULT_USER_FOLDER,
+        empty_answers,
+    )
+
+    stored = json.loads(answer_path.read_text(encoding="utf-8"))
+    assert "human_origins" not in stored["answers"]
+    assert stored["answers"]["another_passage"] == [
+        {"user_answer": "keep", "user_note": "keep"}
+    ]

@@ -6,6 +6,7 @@ let vocabularyHighlightsVisible = false;
 let genAudioEnabled = true;
 let exerciseDirty = false;
 let exerciseSaveAllowed = true;
+let exerciseReferenceVisible = false;
 
 const addButton = document.getElementById("selectionAddButton");
 
@@ -61,7 +62,7 @@ window.setGenAudioEnabled = function (enabled) {
 window.setExerciseSaveAllowed = function (allowed) {
   exerciseSaveAllowed = Boolean(allowed);
   updateExerciseInputState();
-  updateExerciseSaveButton();
+  updateExerciseActionButtons();
 };
 
 window.setExercises = function (questions) {
@@ -306,6 +307,7 @@ function renderPassageControls() {
 function renderExercises(questions) {
   const section = document.getElementById("exerciseSection");
   section.replaceChildren();
+  exerciseReferenceVisible = false;
   setExerciseDirty(false);
 
   if (!questions.length) {
@@ -322,6 +324,7 @@ function renderExercises(questions) {
     block.className = "question";
     block.dataset.questionIndex = String(questionIndex);
     block.dataset.questionType = question.type;
+    block.dataset.referenceAnswer = question.reference_answer || "";
 
     if (question.type === "choice") {
       renderChoiceQuestion(block, question, questionIndex);
@@ -334,23 +337,53 @@ function renderExercises(questions) {
     section.appendChild(block);
   });
 
-  const saveRow = document.createElement("div");
-  saveRow.className = "exercise-save-row";
+  const actionRow = document.createElement("div");
+  actionRow.className = "exercise-action-row";
 
   const saveButton = document.createElement("button");
   saveButton.id = "exerciseSaveButton";
   saveButton.type = "button";
-  saveButton.className = "control-button exercise-save-button";
+  saveButton.className = "control-button exercise-action-button";
   saveButton.textContent = "Save";
-  saveButton.disabled = true;
   saveButton.addEventListener("click", function () {
     window.submitExerciseAnswers();
   });
 
-  saveRow.appendChild(saveButton);
-  section.appendChild(saveRow);
+  const hintButton = document.createElement("button");
+  hintButton.id = "exerciseOptionHintButton";
+  hintButton.type = "button";
+  hintButton.className = "control-button exercise-action-button";
+  hintButton.textContent = "选项提示";
+  hintButton.addEventListener("click", function () {
+    showOptionHints();
+  });
+
+  const referenceButton = document.createElement("button");
+  referenceButton.id = "exerciseReferenceButton";
+  referenceButton.type = "button";
+  referenceButton.className = "control-button exercise-action-button";
+  referenceButton.textContent = "参考答案";
+  referenceButton.addEventListener("click", function () {
+    toggleReferenceAnswers();
+  });
+
+  const clearButton = document.createElement("button");
+  clearButton.id = "exerciseClearButton";
+  clearButton.type = "button";
+  clearButton.className = "control-button exercise-action-button";
+  clearButton.textContent = "Clear";
+  clearButton.addEventListener("click", function () {
+    clearExercisePage();
+  });
+
+  actionRow.appendChild(saveButton);
+  actionRow.appendChild(hintButton);
+  actionRow.appendChild(referenceButton);
+  actionRow.appendChild(clearButton);
+  section.appendChild(actionRow);
+
   updateExerciseInputState();
-  updateExerciseSaveButton();
+  updateExerciseActionButtons();
 }
 
 function renderChoiceQuestion(block, question, questionIndex) {
@@ -373,12 +406,16 @@ function renderChoiceQuestion(block, question, questionIndex) {
     radio.value = option.key;
     radio.checked = savedAnswer === option.key;
     radio.addEventListener("change", function () {
-      if (radio.checked) {
-        setExerciseDirty(true);
+      if (!radio.checked) {
+        return;
       }
+      clearOptionHintForQuestion(block);
+      setExerciseDirty(true);
+      updateReferenceVisibilityAfterEdit(block);
     });
 
     const optionText = document.createElement("span");
+    optionText.className = "option-text";
     optionText.textContent = option.key + ". " + option.text;
 
     row.appendChild(radio);
@@ -405,6 +442,7 @@ function renderFillBlankQuestion(block, question, questionIndex) {
   input.value = question.answer ? question.answer.user_answer || "" : "";
   input.addEventListener("input", function () {
     setExerciseDirty(true);
+    updateReferenceVisibilityAfterEdit(block);
   });
   input.addEventListener("keydown", function (event) {
     if (event.key === "Enter") {
@@ -451,18 +489,30 @@ function renderUserNote(block, question) {
 
 function setExerciseDirty(dirty) {
   exerciseDirty = Boolean(dirty);
-  updateExerciseSaveButton();
+  updateExerciseActionButtons();
   if (bridge) {
     bridge.setExerciseDirty(exerciseDirty);
   }
 }
 
-function updateExerciseSaveButton() {
-  const button = document.getElementById("exerciseSaveButton");
-  if (!button) {
-    return;
+function updateExerciseActionButtons() {
+  const saveButton = document.getElementById("exerciseSaveButton");
+  const hintButton = document.getElementById("exerciseOptionHintButton");
+  const referenceButton = document.getElementById("exerciseReferenceButton");
+  const clearButton = document.getElementById("exerciseClearButton");
+
+  if (saveButton) {
+    saveButton.disabled = !exerciseSaveAllowed || !exerciseDirty;
   }
-  button.disabled = !exerciseSaveAllowed || !exerciseDirty;
+  if (hintButton) {
+    hintButton.disabled = !exerciseSaveAllowed || !hasAnsweredChoiceQuestion();
+  }
+  if (referenceButton) {
+    referenceButton.disabled = !exerciseSaveAllowed || !hasCompletedQuestion();
+  }
+  if (clearButton) {
+    clearButton.disabled = !exerciseSaveAllowed;
+  }
 }
 
 function updateExerciseInputState() {
@@ -472,6 +522,155 @@ function updateExerciseInputState() {
   controls.forEach(function (control) {
     control.disabled = !exerciseSaveAllowed;
   });
+}
+
+function isQuestionComplete(question) {
+  const questionType = question.dataset.questionType;
+
+  if (questionType === "choice") {
+    return Boolean(question.querySelector('input[type="radio"]:checked'));
+  }
+
+  if (questionType === "fill_blank") {
+    const input = question.querySelector(".fill-input");
+    return Boolean(input && input.value.trim());
+  }
+
+  return false;
+}
+
+function hasAnsweredChoiceQuestion() {
+  const questions = document.querySelectorAll("#exerciseSection .question");
+  for (const question of questions) {
+    if (question.dataset.questionType !== "choice") {
+      continue;
+    }
+    if (question.querySelector('input[type="radio"]:checked')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasCompletedQuestion() {
+  const questions = document.querySelectorAll("#exerciseSection .question");
+  for (const question of questions) {
+    if (isQuestionComplete(question)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function clearOptionHintForQuestion(question) {
+  const errors = question.querySelectorAll(".option-hint-error");
+  errors.forEach(function (element) {
+    element.classList.remove("option-hint-error");
+  });
+}
+
+function clearAllOptionHints() {
+  const errors = document.querySelectorAll(
+    "#exerciseSection .option-hint-error"
+  );
+  errors.forEach(function (element) {
+    element.classList.remove("option-hint-error");
+  });
+}
+
+function showOptionHints() {
+  clearAllOptionHints();
+
+  const questions = document.querySelectorAll("#exerciseSection .question");
+  questions.forEach(function (question) {
+    if (question.dataset.questionType !== "choice") {
+      return;
+    }
+
+    const checked = question.querySelector('input[type="radio"]:checked');
+    if (!checked) {
+      return;
+    }
+    if (checked.value === question.dataset.referenceAnswer) {
+      return;
+    }
+
+    const row = checked.closest(".option-row");
+    if (!row) {
+      return;
+    }
+    const optionText = row.querySelector(".option-text");
+    if (optionText) {
+      optionText.classList.add("option-hint-error");
+    }
+  });
+}
+
+function toggleReferenceAnswers() {
+  if (exerciseReferenceVisible) {
+    hideReferenceAnswers();
+    return;
+  }
+
+  let visibleCount = 0;
+  const questions = document.querySelectorAll("#exerciseSection .question");
+  questions.forEach(function (question) {
+    if (isQuestionComplete(question)) {
+      question.classList.add("reference-visible");
+      visibleCount += 1;
+    }
+  });
+  exerciseReferenceVisible = visibleCount > 0;
+}
+
+function hideReferenceAnswers() {
+  const questions = document.querySelectorAll(
+    "#exerciseSection .question.reference-visible"
+  );
+  questions.forEach(function (question) {
+    question.classList.remove("reference-visible");
+  });
+  exerciseReferenceVisible = false;
+}
+
+function updateReferenceVisibilityAfterEdit(question) {
+  if (!question.classList.contains("reference-visible")) {
+    return;
+  }
+  if (isQuestionComplete(question)) {
+    return;
+  }
+
+  question.classList.remove("reference-visible");
+  const visible = document.querySelector(
+    "#exerciseSection .question.reference-visible"
+  );
+  if (!visible) {
+    exerciseReferenceVisible = false;
+  }
+}
+
+function clearExercisePage() {
+  const radios = document.querySelectorAll(
+    '#exerciseSection input[type="radio"]'
+  );
+  radios.forEach(function (radio) {
+    radio.checked = false;
+  });
+
+  const fillInputs = document.querySelectorAll("#exerciseSection .fill-input");
+  fillInputs.forEach(function (input) {
+    input.value = "";
+  });
+
+  const notes = document.querySelectorAll("#exerciseSection .user-note");
+  notes.forEach(function (note) {
+    note.value = "";
+  });
+
+  clearAllOptionHints();
+  hideReferenceAnswers();
+  setExerciseDirty(true);
 }
 
 function collectExerciseAnswers() {

@@ -1,6 +1,5 @@
 :root {
   font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-  font-size: 12pt;
   color: #222;
   background: #ffffff;
 }
@@ -29,12 +28,13 @@ body {
   padding: 40px 0;
   text-align: center;
   color: #777;
+  font-size: 12pt;
 }
 
 #passageTitle {
   margin: 12pt 0 12pt 0;
   text-align: center;
-  font-size: 1.35rem;
+  font-size: 16pt;
   font-weight: 700;
   line-height: 1.35;
 }
@@ -72,6 +72,7 @@ body {
   margin: 0;
   line-height: 1.75;
   text-align: left;
+  font-size: 12pt;
 }
 
 .segment,
@@ -127,12 +128,20 @@ body {
   padding: 3px 10px;
   cursor: pointer;
   font-family: inherit;
-  font-size: 11pt;
   font-weight: 700;
   line-height: 1;
   color: #dd7694;
   vertical-align: middle;
   white-space: nowrap;
+}
+
+
+.control-button {
+  font-size: 11pt;
+}
+
+.accent-button {
+  font-size: 11pt;
 }
 
 .control-button:hover,
@@ -150,7 +159,7 @@ body {
 
 .exercise-title {
   margin: 0 0 12pt 0;
-  font-size: 1.2rem;
+  font-size: 14pt;
   font-weight: 700;
 }
 
@@ -167,6 +176,7 @@ body {
 .question-prompt {
   margin: 0 0 6pt 0;
   line-height: 1.6;
+  font-size: 12pt;
 }
 
 .question-options {
@@ -186,8 +196,13 @@ body {
   flex: 0 0 auto;
 }
 
-.option-row span {
+.option-text {
   line-height: 1.5;
+  font-size: 12pt;
+}
+
+.option-hint-error {
+  color: #c12c1f;
 }
 
 .fill-input {
@@ -195,13 +210,20 @@ body {
   padding: 2px 5px;
   border: 1px solid #aaa;
   border-radius: 3px;
-  font: inherit;
+  font-family: inherit;
+  font-size: 12pt;
 }
 
 .answer-info {
+  display: none;
   margin-top: 6pt;
   color: #555;
   line-height: 1.55;
+  font-size: 12pt;
+}
+
+.question.reference-visible .answer-info {
+  display: block;
 }
 
 .answer-info p {
@@ -211,6 +233,7 @@ body {
 .user-note-label {
   display: block;
   margin-top: 6pt;
+  font-size: 12pt;
   font-weight: 600;
 }
 
@@ -223,7 +246,8 @@ body {
   border: 1px solid #c8c8c8;
   border-radius: 4px;
   resize: vertical;
-  font: inherit;
+  font-family: inherit;
+  font-size: 12pt;
   line-height: 1.5;
 }
 
@@ -249,12 +273,15 @@ body {
   opacity: 0.55;
 }
 
-.exercise-save-row {
+.exercise-action-row {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
+  align-items: center;
+  gap: 15px;
   margin-top: 12pt;
 }
 
-.exercise-save-button {
-  min-width: 70px;
+.exercise-action-button {
+  width: 90px;
+  font-size: 11pt;
 }
