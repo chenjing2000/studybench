@@ -83,7 +83,7 @@ def test_vocabulary_phonetic_merge_preserves_word_added_during_generation(tmp_pa
 
 
 
-def test_extractor_processes_only_current_passage_directory(tmp_path, monkeypatch):
+def test_extractor_pipelines_are_independent(tmp_path, monkeypatch):
     from studybench_audio_extractor import extractor
     from studybench_audio_extractor.models import FileProcessStats
 
@@ -92,25 +92,34 @@ def test_extractor_processes_only_current_passage_directory(tmp_path, monkeypatc
     root_passage.write_text("{}", encoding="utf-8")
     root_vocabulary.write_text("{}", encoding="utf-8")
 
-    nested = tmp_path / "nested"
-    nested.mkdir()
-    (nested / "passage.json").write_text("{}", encoding="utf-8")
-    (nested / "vocabulary.json").write_text("{}", encoding="utf-8")
-
     processed = []
 
     def fake_passage(path, **kwargs):
-        processed.append(Path(path))
+        processed.append(("passage", Path(path)))
         return FileProcessStats(path=Path(path), kind="PASSAGE")
 
     def fake_vocabulary(path, **kwargs):
-        processed.append(Path(path))
+        processed.append(("vocabulary", Path(path)))
         return FileProcessStats(path=Path(path), kind="VOCAB")
+
+    class FakeMdictProvider:
+        def __init__(self, mdx_path, mdd_path):
+            pass
 
     monkeypatch.setattr(extractor, "process_passage", fake_passage)
     monkeypatch.setattr(extractor, "process_vocabulary", fake_vocabulary)
+    monkeypatch.setattr(extractor, "LazyMdictProvider", FakeMdictProvider)
 
-    extractor.run(
+    extractor.run_passage_audio(
+        root_dir=tmp_path,
+        uk_voice="uk-test",
+        us_voice="us-test",
+        wait_seconds=0,
+    )
+    assert processed == [("passage", root_passage)]
+
+    processed.clear()
+    extractor.run_vocabulary_audio(
         root_dir=tmp_path,
         mdx_path=tmp_path / "unused.mdx",
         mdd_path=tmp_path / "unused.mdd",
@@ -118,8 +127,7 @@ def test_extractor_processes_only_current_passage_directory(tmp_path, monkeypatc
         us_voice="us-test",
         wait_seconds=0,
     )
-
-    assert processed == [root_passage, root_vocabulary]
+    assert processed == [("vocabulary", root_vocabulary)]
 
 
 def test_passage_stats_count_processed_skipped_and_failed(tmp_path):
@@ -131,6 +139,7 @@ def test_passage_stats_count_processed_skipped_and_failed(tmp_path):
         json.dumps(
             {
                 "title": "Stats",
+                "tts_enabled": True,
                 "next_sid": 4,
                 "paragraphs": [
                     {
@@ -247,3 +256,46 @@ def test_extractor_json_reader_rejects_duplicate_keys(tmp_path):
 
     with pytest.raises(DataError, match="duplicate JSON key"):
         load_json(path)
+
+
+def test_passage_processor_rejects_article_blank(tmp_path):
+    from studybench_audio_extractor.models import TtsConfig
+    from studybench_audio_extractor.passage_processor import process_passage
+
+    passage_path = tmp_path / "passage.json"
+    passage_path.write_text(
+        json.dumps(
+            {
+                "title": "Blank",
+                "next_sid": 2,
+                "paragraphs": [
+                    {
+                        "paragraph": [
+                            {
+                                "sid": "s001",
+                                "text": "Do not synthesize [[1]]."
+                            }
+                        ]
+                    }
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    calls = []
+
+    def fake_tts(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("TTS must not be called")
+
+    stats = process_passage(
+        passage_path,
+        tts_config=TtsConfig("uk-test", "us-test", 0),
+        tts_generate=fake_tts,
+    )
+
+    assert stats.complete is False
+    assert calls == []
+    assert any("ArticleBlank" in error or "audio" in error for error in stats.errors)

@@ -6,23 +6,19 @@ from .passage_processor import process_passage
 from .vocabulary_processor import process_vocabulary
 
 
-def run(
+def run_passage_audio(
     root_dir,
-    mdx_path,
-    mdd_path,
     uk_voice,
     us_voice,
     wait_seconds,
-    vocabulary_lock=None,
 ):
-    """Process passage.json and vocabulary.json in one Passage folder."""
+    """Process only passage.json in one Passage folder."""
 
     root = Path(root_dir)
     if not root.is_dir():
         raise NotADirectoryError(f"root_dir is not a directory: {root}")
 
     tts_config = TtsConfig(uk_voice, us_voice, wait_seconds)
-    mdict_provider = LazyMdictProvider(mdx_path, mdd_path)
     summary = RunSummary()
 
     passage_path = root / "passage.json"
@@ -31,6 +27,28 @@ def run(
         summary.passage_stats = stats
         if not stats.complete:
             summary.files_partial_or_failed += 1
+
+    return summary
+
+
+def run_vocabulary_audio(
+    root_dir,
+    mdx_path,
+    mdd_path,
+    uk_voice,
+    us_voice,
+    wait_seconds,
+    vocabulary_lock=None,
+):
+    """Process only vocabulary.json in one Passage folder."""
+
+    root = Path(root_dir)
+    if not root.is_dir():
+        raise NotADirectoryError(f"root_dir is not a directory: {root}")
+
+    tts_config = TtsConfig(uk_voice, us_voice, wait_seconds)
+    mdict_provider = LazyMdictProvider(mdx_path, mdd_path)
+    summary = RunSummary()
 
     vocabulary_path = root / "vocabulary.json"
     if vocabulary_path.is_file():

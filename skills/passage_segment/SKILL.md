@@ -1,15 +1,20 @@
-# Passage Segment Skill — V0.2
+# Passage Segment Skill — V0.3
 
 ## Purpose
 
-Create one complete V0.2 `passage.json` from a Passage title and the original Passage body.
+Create one complete StudyBench `passage.json` from a Passage title, the original Passage body, and the Passage-level `tts_enabled` setting.
 
 This skill is **CREATE-only**. It does not update an existing Passage while preserving old SIDs.
+
+`tts_enabled` controls only Passage TTS data. It must never change Paragraph boundaries, Segment generation, SID allocation, or `next_sid`.
 
 ## Input
 
 - Passage title
 - Original Passage body
+- optional `tts_enabled` boolean
+
+If `tts_enabled` is not explicitly supplied, use `false`.
 
 Natural Paragraph boundaries are defined by blank lines in the source text. Formatting-only line wraps inside one natural Paragraph are normalized to one ASCII space.
 
@@ -17,11 +22,14 @@ Natural Paragraph boundaries are defined by blank lines in the source text. Form
 
 Output pure JSON only. Do not use Markdown fences and do not add commentary.
 
-Required structure:
+`tts_enabled` is required in every generated `passage.json` and must be a JSON boolean.
+
+When `tts_enabled` is `true`, the structure is:
 
 ```json
 {
   "title": "Example Passage",
+  "tts_enabled": true,
   "next_sid": 4,
   "paragraphs": [
     {
@@ -59,6 +67,39 @@ Required structure:
   ]
 }
 ```
+
+When `tts_enabled` is `false`, the Paragraph and Segment structure is unchanged, but every Segment keeps an empty `audio` object:
+
+```json
+{
+  "title": "Example Passage",
+  "tts_enabled": false,
+  "next_sid": 2,
+  "paragraphs": [
+    {
+      "paragraph": [
+        {
+          "sid": "s001",
+          "text": "First complete sentence.",
+          "audio": {
+            "uk": "",
+            "us": ""
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+## `tts_enabled` rule
+
+- `tts_enabled` is a Passage-level boolean and is always written explicitly.
+- Default to `false` when the caller does not explicitly provide a value.
+- `tts_enabled` controls only whether Passage Segment TTS paths are declared.
+- Never infer or change Segment construction because of `tts_enabled`.
+- Never infer `tts_enabled` from Exercise question types inside this skill.
+- This skill does not generate audio files.
 
 ## SID rules
 
@@ -113,9 +154,11 @@ A Paragraph boundary always ends the final Segment in that Paragraph even if the
 - Do not add a trailing space merely because another Segment follows.
 - Each Segment must contain lexical content; punctuation-only or empty Segments are invalid.
 
-## Audio paths
+## Audio fields
 
-Every Segment must contain both predeclared relative audio paths, whether or not the files currently exist:
+Every Segment must contain the `audio` object with both `uk` and `us` keys.
+
+When `tts_enabled` is `true`, declare exactly:
 
 ```text
 audio/{sid}_uk.mp3
@@ -131,4 +174,27 @@ For `s007` this is exactly:
 }
 ```
 
+When `tts_enabled` is `false`, both values must be empty strings:
+
+```json
+"audio": {
+  "uk": "",
+  "us": ""
+}
+```
+
+Do not omit the `audio` object and do not write audio paths when `tts_enabled` is `false`.
+
 This skill does not generate audio files, Vocabulary, Exercise data, or any cache/hash file.
+
+## Final validation
+
+Before returning the JSON, verify:
+
+- `tts_enabled` exists and is a JSON boolean;
+- Paragraph and Segment generation followed the same rules regardless of `tts_enabled`;
+- all SIDs are unique, lowercase, and in reading order;
+- `next_sid` is correct;
+- every Segment contains `audio.uk` and `audio.us`;
+- when `tts_enabled` is `true`, every audio path exactly matches its SID;
+- when `tts_enabled` is `false`, every audio path value is exactly `""`.

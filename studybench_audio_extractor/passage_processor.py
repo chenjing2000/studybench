@@ -59,6 +59,10 @@ def process_passage(
             stats.fail(f"{sid}: missing non-empty text")
             stats.items_failed += 1
             continue
+        if "[[" in text or "]]" in text:
+            stats.fail(f"{sid}: ArticleBlank text cannot be processed as Passage TTS")
+            stats.items_failed += 1
+            continue
 
         try:
             uk_target, us_target = _segment_targets(path, segment)

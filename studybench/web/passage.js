@@ -4,30 +4,40 @@ let selectedText = "";
 let vocabularyWords = [];
 let vocabularyHighlightsVisible = false;
 let genAudioEnabled = true;
-let exerciseDirty = false;
-let exerciseSaveAllowed = true;
-let exerciseReferenceVisible = false;
+let currentArticleFamily = "article";
 
 const addButton = document.getElementById("selectionAddButton");
+const passageTextElement = document.getElementById("passageText");
 
 new QWebChannel(qt.webChannelTransport, function (channel) {
   bridge = channel.objects.bridge;
 });
 
-window.renderPassage = function (data) {
+window.renderStudyPage = function (data) {
   currentAccent = "uk";
+  currentArticleFamily = data.article_family === "article_blank" ? "article_blank" : "article";
   hideSelectionButton();
 
   document.getElementById("emptyState").classList.add("hidden");
   document.getElementById("passagePage").classList.remove("hidden");
 
-  const title = document.getElementById("passageTitle");
-  title.textContent = data.title;
+  const passage = data.passage || {};
+  document.getElementById("passageTitle").textContent = passage.title || "";
 
-  renderParagraphs(data.paragraphs || []);
-  renderPassageControls();
-  renderExercises(data.questions || []);
+  if (currentArticleFamily === "article_blank") {
+    renderArticleBlankPassage(passage);
+  } else {
+    renderArticlePassage(passage);
+  }
+
+  if (window.renderExercise) {
+    window.renderExercise(data.exercise || null, data.answers || null);
+  }
+  applyVocabularyHighlights();
 };
+
+// Backward-compatible function name inside this package only; all Python calls use renderStudyPage.
+window.renderPassage = window.renderStudyPage;
 
 window.clearPassage = function () {
   hideSelectionButton();
@@ -35,7 +45,11 @@ window.clearPassage = function () {
   document.getElementById("passageTitle").textContent = "";
   document.getElementById("passageText").replaceChildren();
   document.getElementById("passageControls").replaceChildren();
-  document.getElementById("exerciseSection").replaceChildren();
+  if (window.clearExercise) {
+    window.clearExercise();
+  } else {
+    document.getElementById("exerciseSection").replaceChildren();
+  }
   document.getElementById("passagePage").classList.add("hidden");
   document.getElementById("emptyState").classList.remove("hidden");
 };
@@ -59,28 +73,6 @@ window.setGenAudioEnabled = function (enabled) {
   }
 };
 
-window.setExerciseSaveAllowed = function (allowed) {
-  exerciseSaveAllowed = Boolean(allowed);
-  updateExerciseInputState();
-  updateExerciseActionButtons();
-};
-
-window.setExercises = function (questions) {
-  renderExercises(questions || []);
-};
-
-window.markExerciseSaved = function () {
-  setExerciseDirty(false);
-};
-
-window.submitExerciseAnswers = function () {
-  if (!bridge || !exerciseDirty || !exerciseSaveAllowed) {
-    return;
-  }
-  const answers = collectExerciseAnswers();
-  bridge.saveExerciseAnswers(JSON.stringify(answers));
-};
-
 window.updateAudioState = function (state, owner) {
   const paragraphButtons = document.querySelectorAll(".paragraph-play");
   paragraphButtons.forEach(function (button) {
@@ -102,155 +94,75 @@ window.updateAudioState = function (state, owner) {
   }
 };
 
-function applyVocabularyHighlights() {
-  clearTextSelection();
-  const segments = document.querySelectorAll("#passageText .segment");
-  segments.forEach(function (segment) {
-    const originalText = segment.dataset.originalText || segment.textContent || "";
-    segment.dataset.originalText = originalText;
-    segment.replaceChildren();
-
-    if (!vocabularyHighlightsVisible || vocabularyWords.length === 0) {
-      segment.appendChild(document.createTextNode(originalText));
-      return;
-    }
-
-    appendHighlightedText(segment, originalText, vocabularyWords);
-  });
+function renderArticlePassage(passage) {
+  renderParagraphs(passage.paragraphs || [], true);
+  renderPassageControls(true);
 }
 
-function normalizeVocabularyWords(words) {
-  if (!Array.isArray(words)) {
-    return [];
-  }
-
-  const result = [];
-  const seen = new Set();
-  words.forEach(function (word) {
-    const value = String(word || "").trim();
-    const key = value.toLocaleLowerCase();
-    if (value && !seen.has(key)) {
-      seen.add(key);
-      result.push(value);
-    }
-  });
-  result.sort(function (a, b) {
-    return b.length - a.length;
-  });
-  return result;
+function renderArticleBlankPassage(passage) {
+  renderParagraphs(passage.paragraphs || [], false);
+  renderPassageControls(false);
 }
 
-function appendHighlightedText(parent, text, words) {
-  let position = 0;
-  while (position < text.length) {
-    let bestStart = -1;
-    let bestEnd = -1;
-
-    words.forEach(function (word) {
-      const start = findWholeWord(text, word, position);
-      if (start === -1) {
-        return;
-      }
-      const end = start + word.length;
-      if (bestStart === -1 || start < bestStart || (start === bestStart && end > bestEnd)) {
-        bestStart = start;
-        bestEnd = end;
-      }
-    });
-
-    if (bestStart === -1) {
-      parent.appendChild(document.createTextNode(text.slice(position)));
-      break;
-    }
-
-    if (bestStart > position) {
-      parent.appendChild(document.createTextNode(text.slice(position, bestStart)));
-    }
-
-    const mark = document.createElement("span");
-    mark.className = "vocabulary-match";
-    mark.textContent = text.slice(bestStart, bestEnd);
-    parent.appendChild(mark);
-    position = bestEnd;
-  }
-}
-
-function findWholeWord(text, word, fromIndex) {
-  const lowerText = text.toLocaleLowerCase();
-  const lowerWord = word.toLocaleLowerCase();
-  let start = lowerText.indexOf(lowerWord, fromIndex);
-
-  while (start !== -1) {
-    const end = start + word.length;
-    const before = start > 0 ? text[start - 1] : "";
-    const after = end < text.length ? text[end] : "";
-    if (!isEnglishWordCharacter(before) && !isEnglishWordCharacter(after)) {
-      return start;
-    }
-    start = lowerText.indexOf(lowerWord, start + 1);
-  }
-
-  return -1;
-}
-
-function isEnglishWordCharacter(character) {
-  return /[A-Za-z'’-]/.test(character || "");
-}
-
-function renderParagraphs(paragraphs) {
+function renderParagraphs(paragraphs, audioEnabled) {
   const container = document.getElementById("passageText");
   container.replaceChildren();
 
   paragraphs.forEach(function (paragraph, paragraphIndex) {
     const row = document.createElement("div");
-    row.className = "paragraph-row";
+    row.className = audioEnabled ? "paragraph-row" : "paragraph-row paragraph-row-no-audio";
 
-    const playButton = document.createElement("button");
-    playButton.className = "paragraph-play";
-    playButton.type = "button";
-    playButton.textContent = "▶";
-    playButton.dataset.paragraphIndex = String(paragraphIndex);
-    playButton.title = "朗读本段";
-    playButton.addEventListener("click", function () {
-      if (bridge) {
-        bridge.playParagraph(paragraphIndex);
-      }
-    });
-    row.appendChild(playButton);
+    if (audioEnabled) {
+      const playButton = document.createElement("button");
+      playButton.className = "paragraph-play";
+      playButton.type = "button";
+      playButton.textContent = "▶";
+      playButton.dataset.paragraphIndex = String(paragraphIndex);
+      playButton.title = "朗读本段";
+      playButton.addEventListener("click", function () {
+        if (bridge) {
+          bridge.playParagraph(paragraphIndex);
+        }
+      });
+      row.appendChild(playButton);
+    }
 
     const text = document.createElement("p");
     text.className = "paragraph-text";
-
-    paragraph.segments.forEach(function (segment, segmentIndex) {
+    const segments = Array.isArray(paragraph.segments) ? paragraph.segments : [];
+    segments.forEach(function (segment, segmentIndex) {
       if (segmentIndex > 0) {
         text.appendChild(document.createTextNode(" "));
       }
-
       const span = document.createElement("span");
-      span.className = "segment";
-      span.dataset.sid = segment.sid;
-      span.dataset.originalText = segment.text;
-      span.textContent = segment.text;
-      span.title = "右键朗读该句";
-      span.addEventListener("contextmenu", function (event) {
-        event.preventDefault();
-        event.stopPropagation();
-        clearTextSelection();
-        if (bridge) {
-          bridge.playSegment(segment.sid);
-        }
-      });
+      span.className = audioEnabled ? "segment audio-enabled" : "segment";
+      span.dataset.sid = segment.sid || "";
+      span.dataset.originalText = segment.text || "";
+      if (audioEnabled) {
+        span.title = "右键朗读该句";
+        span.addEventListener("contextmenu", function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          clearTextSelection();
+          if (bridge) {
+            bridge.playSegment(segment.sid);
+          }
+        });
+      }
       text.appendChild(span);
     });
-
     row.appendChild(text);
     container.appendChild(row);
   });
 }
 
-function renderPassageControls() {
+function renderPassageControls(audioEnabled) {
   const controls = document.getElementById("passageControls");
   controls.replaceChildren();
+  controls.classList.toggle("hidden", !audioEnabled);
+  if (!audioEnabled) {
+    return;
+  }
 
   const genAudioButton = document.createElement("button");
   genAudioButton.id = "genAudioButton";
@@ -304,414 +216,123 @@ function renderPassageControls() {
   controls.appendChild(stopButton);
 }
 
-function renderExercises(questions) {
-  const section = document.getElementById("exerciseSection");
-  section.replaceChildren();
-  exerciseReferenceVisible = false;
-  setExerciseDirty(false);
+function applyVocabularyHighlights() {
+  clearTextSelection();
+  const segments = document.querySelectorAll("#passageText .segment");
+  segments.forEach(function (segment) {
+    const originalText = segment.dataset.originalText || "";
+    segment.replaceChildren();
+    appendSegmentText(segment, originalText);
+  });
+}
 
-  if (!questions.length) {
+function appendSegmentText(parent, text) {
+  if (currentArticleFamily !== "article_blank") {
+    appendMaybeHighlighted(parent, text);
     return;
   }
 
-  const title = document.createElement("h2");
-  title.className = "exercise-title";
-  title.textContent = "Exercises";
-  section.appendChild(title);
-
-  questions.forEach(function (question, questionIndex) {
-    const block = document.createElement("div");
-    block.className = "question";
-    block.dataset.questionIndex = String(questionIndex);
-    block.dataset.questionType = question.type;
-    block.dataset.referenceAnswer = question.reference_answer || "";
-
-    if (question.type === "choice") {
-      renderChoiceQuestion(block, question, questionIndex);
-    } else if (question.type === "fill_blank") {
-      renderFillBlankQuestion(block, question, questionIndex);
-    }
-
-    renderAnswerInfo(block, question);
-    renderUserNote(block, question);
-    section.appendChild(block);
-  });
-
-  const actionRow = document.createElement("div");
-  actionRow.className = "exercise-action-row";
-
-  const saveButton = document.createElement("button");
-  saveButton.id = "exerciseSaveButton";
-  saveButton.type = "button";
-  saveButton.className = "control-button exercise-action-button";
-  saveButton.textContent = "Save";
-  saveButton.addEventListener("click", function () {
-    window.submitExerciseAnswers();
-  });
-
-  const hintButton = document.createElement("button");
-  hintButton.id = "exerciseOptionHintButton";
-  hintButton.type = "button";
-  hintButton.className = "control-button exercise-action-button";
-  hintButton.textContent = "选项提示";
-  hintButton.addEventListener("click", function () {
-    showOptionHints();
-  });
-
-  const referenceButton = document.createElement("button");
-  referenceButton.id = "exerciseReferenceButton";
-  referenceButton.type = "button";
-  referenceButton.className = "control-button exercise-action-button";
-  referenceButton.textContent = "参考答案";
-  referenceButton.addEventListener("click", function () {
-    toggleReferenceAnswers();
-  });
-
-  const clearButton = document.createElement("button");
-  clearButton.id = "exerciseClearButton";
-  clearButton.type = "button";
-  clearButton.className = "control-button exercise-action-button";
-  clearButton.textContent = "Clear";
-  clearButton.addEventListener("click", function () {
-    clearExercisePage();
-  });
-
-  actionRow.appendChild(saveButton);
-  actionRow.appendChild(hintButton);
-  actionRow.appendChild(referenceButton);
-  actionRow.appendChild(clearButton);
-  section.appendChild(actionRow);
-
-  updateExerciseInputState();
-  updateExerciseActionButtons();
+  const pattern = /\[\[(\d+)\]\]/g;
+  let cursor = 0;
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    appendMaybeHighlighted(parent, text.slice(cursor, match.index));
+    const blank = document.createElement("span");
+    blank.className = "blank-placeholder";
+    blank.textContent = "____" + match[1] + "____";
+    parent.appendChild(blank);
+    cursor = match.index + match[0].length;
+  }
+  appendMaybeHighlighted(parent, text.slice(cursor));
 }
 
-function renderChoiceQuestion(block, question, questionIndex) {
-  const prompt = document.createElement("p");
-  prompt.className = "question-prompt";
-  prompt.textContent = String(questionIndex + 1) + ". " + question.prompt;
-  block.appendChild(prompt);
+function appendMaybeHighlighted(parent, text) {
+  if (!text) {
+    return;
+  }
+  if (!vocabularyHighlightsVisible || vocabularyWords.length === 0) {
+    parent.appendChild(document.createTextNode(text));
+    return;
+  }
+  appendHighlightedText(parent, text, vocabularyWords);
+}
 
-  const options = document.createElement("div");
-  options.className = "question-options";
-  const savedAnswer = question.answer ? question.answer.user_answer || "" : "";
+function normalizeVocabularyWords(words) {
+  if (!Array.isArray(words)) {
+    return [];
+  }
+  const result = [];
+  const seen = new Set();
+  words.forEach(function (word) {
+    const value = String(word || "").trim();
+    const key = value.toLocaleLowerCase();
+    if (value && !seen.has(key)) {
+      seen.add(key);
+      result.push(value);
+    }
+  });
+  result.sort(function (a, b) {
+    return b.length - a.length;
+  });
+  return result;
+}
 
-  question.options.forEach(function (option) {
-    const row = document.createElement("label");
-    row.className = "option-row";
-
-    const radio = document.createElement("input");
-    radio.type = "radio";
-    radio.name = "question-" + questionIndex;
-    radio.value = option.key;
-    radio.checked = savedAnswer === option.key;
-    radio.addEventListener("change", function () {
-      if (!radio.checked) {
+function appendHighlightedText(parent, text, words) {
+  let position = 0;
+  while (position < text.length) {
+    let bestStart = -1;
+    let bestEnd = -1;
+    words.forEach(function (word) {
+      const start = findWholeWord(text, word, position);
+      if (start === -1) {
         return;
       }
-      clearOptionHintForQuestion(block);
-      setExerciseDirty(true);
-      updateReferenceVisibilityAfterEdit(block);
+      const end = start + word.length;
+      if (bestStart === -1 || start < bestStart || (start === bestStart && end > bestEnd)) {
+        bestStart = start;
+        bestEnd = end;
+      }
     });
 
-    const optionText = document.createElement("span");
-    optionText.className = "option-text";
-    optionText.textContent = option.key + ". " + option.text;
-
-    row.appendChild(radio);
-    row.appendChild(optionText);
-    options.appendChild(row);
-  });
-
-  block.appendChild(options);
-}
-
-function renderFillBlankQuestion(block, question, questionIndex) {
-  const prompt = document.createElement("p");
-  prompt.className = "question-prompt";
-
-  const prefix = document.createTextNode(String(questionIndex + 1) + ". ");
-  prompt.appendChild(prefix);
-
-  const pieces = question.prompt.split("______");
-  prompt.appendChild(document.createTextNode(pieces[0]));
-
-  const input = document.createElement("input");
-  input.className = "fill-input";
-  input.type = "text";
-  input.value = question.answer ? question.answer.user_answer || "" : "";
-  input.addEventListener("input", function () {
-    setExerciseDirty(true);
-    updateReferenceVisibilityAfterEdit(block);
-  });
-  input.addEventListener("keydown", function (event) {
-    if (event.key === "Enter") {
-      input.blur();
+    if (bestStart === -1) {
+      parent.appendChild(document.createTextNode(text.slice(position)));
+      break;
     }
-  });
-  prompt.appendChild(input);
-  prompt.appendChild(document.createTextNode(pieces[1]));
-
-  block.appendChild(prompt);
-}
-
-function renderAnswerInfo(block, question) {
-  const info = document.createElement("div");
-  info.className = "answer-info";
-
-  const answer = document.createElement("p");
-  answer.textContent = "Reference answer: " + question.reference_answer;
-  info.appendChild(answer);
-
-  if (question.explanation) {
-    const explanation = document.createElement("p");
-    explanation.textContent = "Explanation: " + question.explanation;
-    info.appendChild(explanation);
-  }
-
-  block.appendChild(info);
-}
-
-function renderUserNote(block, question) {
-  const label = document.createElement("label");
-  label.className = "user-note-label";
-  label.textContent = "Your note:";
-  block.appendChild(label);
-
-  const note = document.createElement("textarea");
-  note.className = "user-note";
-  note.value = question.answer ? question.answer.user_note || "" : "";
-  note.addEventListener("input", function () {
-    setExerciseDirty(true);
-  });
-  block.appendChild(note);
-}
-
-function setExerciseDirty(dirty) {
-  exerciseDirty = Boolean(dirty);
-  updateExerciseActionButtons();
-  if (bridge) {
-    bridge.setExerciseDirty(exerciseDirty);
-  }
-}
-
-function updateExerciseActionButtons() {
-  const saveButton = document.getElementById("exerciseSaveButton");
-  const hintButton = document.getElementById("exerciseOptionHintButton");
-  const referenceButton = document.getElementById("exerciseReferenceButton");
-  const clearButton = document.getElementById("exerciseClearButton");
-
-  if (saveButton) {
-    saveButton.disabled = !exerciseSaveAllowed || !exerciseDirty;
-  }
-  if (hintButton) {
-    hintButton.disabled = !exerciseSaveAllowed || !hasAnsweredChoiceQuestion();
-  }
-  if (referenceButton) {
-    referenceButton.disabled = !exerciseSaveAllowed || !hasCompletedQuestion();
-  }
-  if (clearButton) {
-    clearButton.disabled = !exerciseSaveAllowed;
-  }
-}
-
-function updateExerciseInputState() {
-  const controls = document.querySelectorAll(
-    "#exerciseSection input, #exerciseSection textarea"
-  );
-  controls.forEach(function (control) {
-    control.disabled = !exerciseSaveAllowed;
-  });
-}
-
-function isQuestionComplete(question) {
-  const questionType = question.dataset.questionType;
-
-  if (questionType === "choice") {
-    return Boolean(question.querySelector('input[type="radio"]:checked'));
-  }
-
-  if (questionType === "fill_blank") {
-    const input = question.querySelector(".fill-input");
-    return Boolean(input && input.value.trim());
-  }
-
-  return false;
-}
-
-function hasAnsweredChoiceQuestion() {
-  const questions = document.querySelectorAll("#exerciseSection .question");
-  for (const question of questions) {
-    if (question.dataset.questionType !== "choice") {
-      continue;
+    if (bestStart > position) {
+      parent.appendChild(document.createTextNode(text.slice(position, bestStart)));
     }
-    if (question.querySelector('input[type="radio"]:checked')) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function hasCompletedQuestion() {
-  const questions = document.querySelectorAll("#exerciseSection .question");
-  for (const question of questions) {
-    if (isQuestionComplete(question)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function clearOptionHintForQuestion(question) {
-  const errors = question.querySelectorAll(".option-hint-error");
-  errors.forEach(function (element) {
-    element.classList.remove("option-hint-error");
-  });
-}
-
-function clearAllOptionHints() {
-  const errors = document.querySelectorAll(
-    "#exerciseSection .option-hint-error"
-  );
-  errors.forEach(function (element) {
-    element.classList.remove("option-hint-error");
-  });
-}
-
-function showOptionHints() {
-  clearAllOptionHints();
-
-  const questions = document.querySelectorAll("#exerciseSection .question");
-  questions.forEach(function (question) {
-    if (question.dataset.questionType !== "choice") {
-      return;
-    }
-
-    const checked = question.querySelector('input[type="radio"]:checked');
-    if (!checked) {
-      return;
-    }
-    if (checked.value === question.dataset.referenceAnswer) {
-      return;
-    }
-
-    const row = checked.closest(".option-row");
-    if (!row) {
-      return;
-    }
-    const optionText = row.querySelector(".option-text");
-    if (optionText) {
-      optionText.classList.add("option-hint-error");
-    }
-  });
-}
-
-function toggleReferenceAnswers() {
-  if (exerciseReferenceVisible) {
-    hideReferenceAnswers();
-    return;
-  }
-
-  let visibleCount = 0;
-  const questions = document.querySelectorAll("#exerciseSection .question");
-  questions.forEach(function (question) {
-    if (isQuestionComplete(question)) {
-      question.classList.add("reference-visible");
-      visibleCount += 1;
-    }
-  });
-  exerciseReferenceVisible = visibleCount > 0;
-}
-
-function hideReferenceAnswers() {
-  const questions = document.querySelectorAll(
-    "#exerciseSection .question.reference-visible"
-  );
-  questions.forEach(function (question) {
-    question.classList.remove("reference-visible");
-  });
-  exerciseReferenceVisible = false;
-}
-
-function updateReferenceVisibilityAfterEdit(question) {
-  if (!question.classList.contains("reference-visible")) {
-    return;
-  }
-  if (isQuestionComplete(question)) {
-    return;
-  }
-
-  question.classList.remove("reference-visible");
-  const visible = document.querySelector(
-    "#exerciseSection .question.reference-visible"
-  );
-  if (!visible) {
-    exerciseReferenceVisible = false;
+    const mark = document.createElement("span");
+    mark.className = "vocabulary-match";
+    mark.textContent = text.slice(bestStart, bestEnd);
+    parent.appendChild(mark);
+    position = bestEnd;
   }
 }
 
-function clearExercisePage() {
-  const radios = document.querySelectorAll(
-    '#exerciseSection input[type="radio"]'
-  );
-  radios.forEach(function (radio) {
-    radio.checked = false;
-  });
-
-  const fillInputs = document.querySelectorAll("#exerciseSection .fill-input");
-  fillInputs.forEach(function (input) {
-    input.value = "";
-  });
-
-  const notes = document.querySelectorAll("#exerciseSection .user-note");
-  notes.forEach(function (note) {
-    note.value = "";
-  });
-
-  clearAllOptionHints();
-  hideReferenceAnswers();
-  setExerciseDirty(true);
+function findWholeWord(text, word, fromIndex) {
+  const lowerText = text.toLocaleLowerCase();
+  const lowerWord = word.toLocaleLowerCase();
+  let start = lowerText.indexOf(lowerWord, fromIndex);
+  while (start !== -1) {
+    const end = start + word.length;
+    const before = start > 0 ? text[start - 1] : "";
+    const after = end < text.length ? text[end] : "";
+    if (!isEnglishWordCharacter(before) && !isEnglishWordCharacter(after)) {
+      return start;
+    }
+    start = lowerText.indexOf(lowerWord, start + 1);
+  }
+  return -1;
 }
 
-function collectExerciseAnswers() {
-  const answers = [];
-  const questions = document.querySelectorAll("#exerciseSection .question");
-
-  questions.forEach(function (question) {
-    let userAnswer = "";
-    const questionType = question.dataset.questionType;
-
-    if (questionType === "choice") {
-      const checked = question.querySelector('input[type="radio"]:checked');
-      if (checked) {
-        userAnswer = checked.value;
-      }
-    } else if (questionType === "fill_blank") {
-      const input = question.querySelector(".fill-input");
-      if (input) {
-        userAnswer = input.value;
-      }
-    }
-
-    let userNote = "";
-    const note = question.querySelector(".user-note");
-    if (note) {
-      userNote = note.value;
-    }
-
-    answers.push({
-      user_answer: userAnswer,
-      user_note: userNote,
-    });
-  });
-
-  return answers;
+function isEnglishWordCharacter(character) {
+  return /[A-Za-z'’-]/.test(character || "");
 }
-
-const passageTextElement = document.getElementById("passageText");
 
 passageTextElement.addEventListener("contextmenu", function (event) {
-  event.preventDefault();
+  if (currentArticleFamily === "article_blank") {
+    event.preventDefault();
+  }
 });
 
 document.addEventListener("selectionchange", function () {
@@ -719,7 +340,6 @@ document.addEventListener("selectionchange", function () {
 });
 
 addButton.addEventListener("mousedown", function (event) {
-  // Keep the browser selection unchanged while the user clicks +.
   event.preventDefault();
 });
 
@@ -728,7 +348,6 @@ addButton.addEventListener("click", function () {
     hideSelectionButton();
     return;
   }
-
   bridge.addWord(selectedText);
   clearTextSelection();
 });
@@ -739,32 +358,27 @@ function updateSelectionButton() {
     hideSelectionButton();
     return;
   }
-
   const range = selection.getRangeAt(0);
   if (!passageTextElement.contains(range.commonAncestorContainer)) {
     hideSelectionButton();
     return;
   }
-
   const startSegment = closestSegment(range.startContainer);
   const endSegment = closestSegment(range.endContainer);
   if (!startSegment || startSegment !== endSegment) {
     hideSelectionButton();
     return;
   }
-
   const text = selection.toString().replace(/\s+/g, " ").trim();
   if (!text) {
     hideSelectionButton();
     return;
   }
-
   const rect = range.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) {
     hideSelectionButton();
     return;
   }
-
   selectedText = text;
   addButton.style.left = window.scrollX + rect.right - 4 + "px";
   addButton.style.top = window.scrollY + rect.bottom - 6 + "px";
@@ -794,4 +408,3 @@ function hideSelectionButton() {
   selectedText = "";
   addButton.classList.add("hidden");
 }
-

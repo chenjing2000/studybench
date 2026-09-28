@@ -1,8 +1,8 @@
 import re
-import threading
 from pathlib import Path
 
 from .json_store import read_json, write_json_atomic
+from .article_classes import Article, load_article
 
 
 SID_PATTERN = re.compile(r"^s(\d{3})$")
@@ -35,17 +35,9 @@ WINDOWS_RESERVED_NAMES = {
 }
 
 
-class Segment:
-    def __init__(self, sid, text, audio):
-        self.sid = sid
-        self.text = text
-        self.audio = audio
-
-
 class EnglishData:
     def __init__(self, library_root=None):
         self.library_root = None
-        self.vocabulary_lock = threading.Lock()
         if library_root:
             self.set_library_root(library_root)
 
@@ -79,212 +71,43 @@ class EnglishData:
 
     def load_passage_payload(self, passage_dir, user_folder=DEFAULT_USER_FOLDER):
         passage_dir = Path(passage_dir)
-        passage = self._load_passage(passage_dir)
-        questions, warnings = self.load_exercise_payload(
-            passage_dir,
-            user_folder,
-            passage["title"],
-        )
+        loaded = load_article(passage_dir)
+        article = loaded.article
+        warnings = []
+        if loaded.warning:
+            warnings.append(loaded.warning)
 
-        rendered_paragraphs = []
-        for paragraph in passage["paragraphs"]:
-            rendered_segments = []
-            for segment in paragraph:
-                rendered_segments.append(
-                    {
-                        "sid": segment.sid,
-                        "text": segment.text,
-                    }
-                )
-            rendered_paragraphs.append({"segments": rendered_segments})
+        exercise_payload = None
+        answers_payload = None
+        if loaded.has_exercise:
+            exercise_payload = article.build_exercise_payload()
+            saved = None
+            try:
+                saved = self._load_answers_for_passage(passage_dir, user_folder)
+            except Exception as error:
+                warnings.append(f"《{article.title}》：用户答案无法加载：{error}")
+
+            if saved is not None:
+                saved_type = saved.get("type") if isinstance(saved, dict) else None
+                if saved_type != article.exercise_type:
+                    warnings.append(
+                        f"《{article.title}》：已有答案 type 与当前 Exercise 不一致，已忽略旧答案。"
+                    )
+                    saved = None
+            answers_payload = {
+                "type": article.exercise_type,
+                "answers": article.normalize_answers(saved),
+            }
 
         payload = {
-            "title": passage["title"],
-            "paragraphs": rendered_paragraphs,
-            "questions": questions,
+            "article_family": article.article_family,
+            "passage": article.build_passage_payload(),
+            "exercise": exercise_payload,
+            "answers": answers_payload,
+            "warning": loaded.warning,
         }
         return payload, warnings
 
-    def load_exercise_payload(
-        self,
-        passage_dir,
-        user_folder=DEFAULT_USER_FOLDER,
-        passage_title=None,
-    ):
-        passage_dir = Path(passage_dir)
-        exercise_path = passage_dir / "exercise.json"
-        if not exercise_path.exists():
-            return [], []
-
-        if not passage_title:
-            passage_title = self._best_passage_label(passage_dir, passage_dir.name)
-
-        try:
-            exercise = read_json(exercise_path)
-            changed = self._strip_legacy_exercise_answers(exercise)
-            if changed:
-                write_json_atomic(exercise_path, exercise)
-            questions = self._validate_exercise(exercise)
-        except Exception as error:
-            return [], [f"《{passage_title}》：exercise.json 无法加载：{error}"]
-
-        warnings = []
-        saved_answers = []
-        try:
-            saved_answers = self._load_answers_for_passage(
-                passage_dir,
-                user_folder,
-            )
-        except Exception as error:
-            warnings.append(
-                f"《{passage_title}》：用户答案无法加载：{error}"
-            )
-
-        payload = self._merge_exercise_answers(questions, saved_answers)
-        return payload, warnings
-
-    def get_vocabulary(self, passage_dir):
-        passage_dir = Path(passage_dir)
-        vocabulary_path = passage_dir / "vocabulary.json"
-        data = read_json(
-            vocabulary_path,
-            allow_missing=True,
-            default={"words": []},
-        )
-        self._validate_vocabulary(data)
-        return data.get("words", [])
-
-    def add_word(self, passage_dir, selected_word):
-        passage_dir = Path(passage_dir)
-        word_text = self._normalize_vocabulary_word(selected_word)
-        if not word_text:
-            return {"ok": False, "message": "没有选中有效单词。"}
-
-        vocabulary_path = passage_dir / "vocabulary.json"
-        with self.vocabulary_lock:
-            vocabulary = read_json(
-                vocabulary_path,
-                allow_missing=True,
-                default={"words": []},
-            )
-            self._validate_vocabulary(vocabulary)
-
-            words = vocabulary.get("words", [])
-            if self._find_vocabulary_index(words, word_text) >= 0:
-                return {"ok": False, "message": f"{word_text} 已经在生词栏中。"}
-
-            stem = self.audio_stem(word_text)
-            entry = {
-                "word": word_text,
-                "phonetic_uk": "",
-                "phonetic_us": "",
-                "meanings": [],
-                "audio": {
-                    "uk": f"audio_vocabulary/{stem}_uk.mp3",
-                    "us": f"audio_vocabulary/{stem}_us.mp3",
-                },
-            }
-            words.append(entry)
-            write_json_atomic(vocabulary_path, vocabulary)
-
-        return {
-            "ok": True,
-            "message": f"已添加 {word_text}",
-            "entry": entry,
-        }
-
-    def remove_word(self, passage_dir, word):
-        passage_dir = Path(passage_dir)
-        word_text = self._normalize_vocabulary_word(word)
-        if not word_text:
-            return {"ok": False, "message": "Vocabulary word 不能为空。"}
-
-        vocabulary_path = passage_dir / "vocabulary.json"
-        with self.vocabulary_lock:
-            if not vocabulary_path.exists() or not vocabulary_path.is_file():
-                raise ValueError("vocabulary.json 不存在。")
-
-            vocabulary = read_json(vocabulary_path)
-            self._validate_vocabulary(vocabulary)
-            words = vocabulary.get("words", [])
-
-            target_index = self._find_vocabulary_index(words, word_text)
-
-            if target_index < 0:
-                return {
-                    "ok": False,
-                    "message": f"找不到 Vocabulary word：{word_text}",
-                }
-
-            deleted = words.pop(target_index)
-            write_json_atomic(vocabulary_path, vocabulary)
-
-        return {
-            "ok": True,
-            "word": deleted.get("word", word_text),
-            "remaining_count": len(words),
-        }
-
-    def move_word(self, passage_dir, word, direction):
-        passage_dir = Path(passage_dir)
-        word_text = self._normalize_vocabulary_word(word)
-        if not word_text:
-            return {"ok": False, "message": "Vocabulary word 不能为空。"}
-        if direction not in ("up", "down"):
-            raise ValueError(f"不支持的 Vocabulary 移动方向：{direction}")
-
-        vocabulary_path = passage_dir / "vocabulary.json"
-        with self.vocabulary_lock:
-            if not vocabulary_path.exists() or not vocabulary_path.is_file():
-                raise ValueError("vocabulary.json 不存在。")
-
-            vocabulary = read_json(vocabulary_path)
-            self._validate_vocabulary(vocabulary)
-            words = vocabulary.get("words", [])
-
-            target_index = self._find_vocabulary_index(words, word_text)
-
-            if target_index < 0:
-                return {
-                    "ok": False,
-                    "message": f"找不到 Vocabulary word：{word_text}",
-                }
-
-            new_index = target_index - 1
-            if direction == "down":
-                new_index = target_index + 1
-
-            if new_index < 0 or new_index >= len(words):
-                return {
-                    "ok": False,
-                    "message": "Vocabulary word 已经位于可移动边界。",
-                }
-
-            moving_entry = words.pop(target_index)
-            words.insert(new_index, moving_entry)
-            moved_word = str(moving_entry.get("word", word_text))
-            write_json_atomic(vocabulary_path, vocabulary)
-
-        return {
-            "ok": True,
-            "word": moved_word,
-            "old_index": target_index,
-            "new_index": new_index,
-            "total_count": len(words),
-        }
-
-    def export_vocabulary(self, passage_dir, destination):
-        words = self.get_vocabulary(passage_dir)
-        write_json_atomic(destination, {"words": words})
-
-    def import_vocabulary(self, passage_dir, source):
-        passage_dir = Path(passage_dir)
-        target = passage_dir / "vocabulary.json"
-        incoming = read_json(source)
-        self._validate_vocabulary(incoming)
-
-        with self.vocabulary_lock:
-            write_json_atomic(target, incoming)
 
     def book_dir_for_passage(self, passage_dir):
         passage_dir = Path(passage_dir)
@@ -388,44 +211,11 @@ class EnglishData:
         if not isinstance(answers, list):
             raise ValueError("Exercise answers 必须是数组。")
 
-        exercise_path = passage_dir / "exercise.json"
-        exercise = read_json(exercise_path)
-        changed = self._strip_legacy_exercise_answers(exercise)
-        if changed:
-            write_json_atomic(exercise_path, exercise)
-        questions = self._validate_exercise(exercise)
-
-        if len(answers) != len(questions):
-            raise ValueError("当前答案数量与 Exercise 题目数量不一致。")
-
-        normalized_answers = []
-        for index, answer in enumerate(answers):
-            if not isinstance(answer, dict):
-                raise ValueError(f"第 {index + 1} 题答案结构无效。")
-
-            user_answer = answer.get("user_answer")
-            user_note = answer.get("user_note")
-            if not isinstance(user_answer, str):
-                raise ValueError(f"第 {index + 1} 题 user_answer 必须是字符串。")
-            if not isinstance(user_note, str):
-                raise ValueError(f"第 {index + 1} 题 user_note 必须是字符串。")
-
-            question = questions[index]
-            if question.get("type") == "choice" and user_answer:
-                valid_keys = []
-                for option in question.get("options", []):
-                    valid_keys.append(option.get("key"))
-                if user_answer not in valid_keys:
-                    raise ValueError(
-                        f"第 {index + 1} 题 user_answer 不属于选项 key。"
-                    )
-
-            normalized_answers.append(
-                {
-                    "user_answer": user_answer,
-                    "user_note": user_note,
-                }
-            )
+        loaded = load_article(passage_dir)
+        if not loaded.has_exercise:
+            raise ValueError("当前 Article 没有可保存的 Exercise。")
+        article = loaded.article
+        normalized_answers = article.validate_answers(answers)
 
         book_dir = self.book_dir_for_passage(passage_dir)
         self._validate_user_folder_reference(user_folder)
@@ -434,72 +224,35 @@ class EnglishData:
         self._validate_answer_sheet(answer_sheet, user_folder)
 
         passage_folder = passage_dir.name
-        all_empty = True
-        for answer in normalized_answers:
-            if answer["user_answer"] or answer["user_note"]:
-                all_empty = False
-                break
-
-        if all_empty:
-            answer_sheet["answers"].pop(passage_folder, None)
+        if any(item["answer"] for item in normalized_answers):
+            answer_sheet["answers"][passage_folder] = {
+                "type": article.exercise_type,
+                "answers": normalized_answers,
+            }
         else:
-            answer_sheet["answers"][passage_folder] = normalized_answers
+            answer_sheet["answers"].pop(passage_folder, None)
         write_json_atomic(answer_path, answer_sheet)
 
     def get_segment_audio_path(self, passage_dir, sid, accent):
-        self._validate_accent(accent)
         passage_dir = Path(passage_dir)
-        passage = self._load_passage(passage_dir)
-        segment = self._find_segment(passage, sid)
-        return passage_dir / segment.audio[accent]
+        article = load_article(passage_dir).article
+        if not isinstance(article, Article):
+            raise ValueError("当前 ArticleBlank 不具备 Passage Audio 能力。")
+        return article.get_segment_audio_path(sid, accent)
 
     def get_paragraph_audio_paths(self, passage_dir, paragraph_index, accent):
-        self._validate_accent(accent)
         passage_dir = Path(passage_dir)
-        passage = self._load_passage(passage_dir)
-
-        if not isinstance(paragraph_index, int):
-            raise ValueError("Paragraph index 必须是整数。")
-        if paragraph_index < 0 or paragraph_index >= len(passage["paragraphs"]):
-            raise ValueError("Paragraph index 超出范围。")
-
-        result = []
-        for segment in passage["paragraphs"][paragraph_index]:
-            result.append(passage_dir / segment.audio[accent])
-        return result
+        article = load_article(passage_dir).article
+        if not isinstance(article, Article):
+            raise ValueError("当前 ArticleBlank 不具备 Passage Audio 能力。")
+        return article.get_paragraph_audio_paths(paragraph_index, accent)
 
     def get_passage_audio_paths(self, passage_dir, accent):
-        self._validate_accent(accent)
         passage_dir = Path(passage_dir)
-        passage = self._load_passage(passage_dir)
-        result = []
-
-        for paragraph in passage["paragraphs"]:
-            for segment in paragraph:
-                result.append(passage_dir / segment.audio[accent])
-
-        return result
-
-    def get_vocabulary_audio_path(self, passage_dir, word, accent):
-        self._validate_accent(accent)
-        passage_dir = Path(passage_dir)
-        words = self.get_vocabulary(passage_dir)
-
-        index = self._find_vocabulary_index(words, word)
-        if index >= 0:
-            audio = words[index]["audio"]
-            return passage_dir / audio[accent]
-
-        raise ValueError(f"找不到 Vocabulary word：{word}")
-
-    def audio_stem(self, word):
-        value = str(word).strip().lower()
-        value = re.sub(r"\s+", "_", value)
-        value = re.sub(r'[<>:"/\\|?*]+', "_", value)
-        value = re.sub(r"_+", "_", value).strip("_")
-        if not value:
-            raise ValueError("Vocabulary word cannot produce an empty audio filename")
-        return value
+        article = load_article(passage_dir).article
+        if not isinstance(article, Article):
+            raise ValueError("当前 ArticleBlank 不具备 Passage Audio 能力。")
+        return article.get_passage_audio_paths(accent)
 
     def _load_book(self, book_dir):
         book_dir = Path(book_dir)
@@ -565,18 +318,19 @@ class EnglishData:
                 )
 
             try:
-                passage = self._load_passage(passage_dir)
+                loaded = load_article(passage_dir)
             except Exception as error:
                 passage_label = self._best_passage_label(passage_dir, folder_name)
                 raise ValueError(
                     f"未加载《{bookname}》：{passage_label}：{error}"
                 ) from None
 
-            self._upgrade_legacy_exercise_if_possible(passage_dir)
+            if loaded.warning:
+                user_warnings.append(f"《{bookname}》{loaded.warning}")
 
             passage_items.append(
                 {
-                    "title": passage["title"],
+                    "title": loaded.article.title,
                     "folder": folder_name,
                     "path": str(passage_dir),
                 }
@@ -590,214 +344,6 @@ class EnglishData:
         }
         return result, user_warnings
 
-    def _load_passage(self, passage_dir):
-        passage_dir = Path(passage_dir)
-        passage_path = passage_dir / "passage.json"
-        if not passage_path.exists() or not passage_path.is_file():
-            raise ValueError("缺少 passage.json。")
-        try:
-            passage = read_json(passage_path)
-        except Exception as error:
-            raise ValueError(f"passage.json 无法读取：{error}") from None
-
-        title = passage.get("title")
-        if not isinstance(title, str) or not title.strip():
-            raise ValueError("passage.json 的 title 不能为空。")
-        if title != title.strip():
-            raise ValueError("passage.json 的 title 不能包含首尾空格。")
-
-        next_sid = passage.get("next_sid")
-        self._validate_next_sid(next_sid)
-
-        raw_paragraphs = passage.get("paragraphs")
-        if not isinstance(raw_paragraphs, list) or not raw_paragraphs:
-            raise ValueError("paragraphs 必须是非空数组。")
-
-        seen_sid = set()
-        max_sid = 0
-        paragraphs = []
-
-        for paragraph_index, paragraph_item in enumerate(raw_paragraphs):
-            if not isinstance(paragraph_item, dict):
-                raise ValueError(f"第 {paragraph_index + 1} 个 paragraph 结构无效。")
-
-            raw_segments = paragraph_item.get("paragraph")
-            if not isinstance(raw_segments, list) or not raw_segments:
-                raise ValueError(f"第 {paragraph_index + 1} 个 paragraph 不能为空。")
-
-            paragraph = []
-            for raw_segment in raw_segments:
-                segment = self._parse_segment(raw_segment)
-                if segment.sid in seen_sid:
-                    raise ValueError(f"存在重复 sid：{segment.sid}")
-                seen_sid.add(segment.sid)
-
-                sid_number = self._sid_number(segment.sid)
-                if sid_number > max_sid:
-                    max_sid = sid_number
-                paragraph.append(segment)
-
-            paragraphs.append(paragraph)
-
-        if next_sid <= max_sid:
-            raise ValueError("next_sid 必须大于当前所有 sid 的数字部分。")
-
-        return {
-            "title": title,
-            "next_sid": next_sid,
-            "paragraphs": paragraphs,
-        }
-
-    def _parse_segment(self, raw_segment):
-        if not isinstance(raw_segment, dict):
-            raise ValueError("Segment 必须是 JSON object。")
-
-        sid = raw_segment.get("sid")
-        self._sid_number(sid)
-
-        text = raw_segment.get("text")
-        if not isinstance(text, str) or not text:
-            raise ValueError(f"{sid} 的 text 不能为空。")
-        if text != text.strip():
-            raise ValueError(f"{sid} 的 text 不能包含人为首尾空格。")
-
-        audio = raw_segment.get("audio")
-        if not isinstance(audio, dict):
-            raise ValueError(f"{sid} 缺少 audio。")
-
-        uk = audio.get("uk")
-        us = audio.get("us")
-        expected_uk = f"audio/{sid}_uk.mp3"
-        expected_us = f"audio/{sid}_us.mp3"
-        if uk != expected_uk:
-            raise ValueError(f"{sid} 的 uk 音频路径应为 {expected_uk}。")
-        if us != expected_us:
-            raise ValueError(f"{sid} 的 us 音频路径应为 {expected_us}。")
-
-        return Segment(sid, text, {"uk": uk, "us": us})
-
-    def _validate_exercise(self, data):
-        if not isinstance(data, dict):
-            raise ValueError("exercise.json 必须是 JSON object。")
-
-        questions = data.get("questions")
-        if not isinstance(questions, list):
-            raise ValueError("questions 必须是数组。")
-
-        for index, question in enumerate(questions):
-            if not isinstance(question, dict):
-                raise ValueError(f"第 {index + 1} 题结构无效。")
-
-            if "answer" in question:
-                raise ValueError(f"第 {index + 1} 题不能包含 answer 用户数据。")
-
-            question_type = question.get("type")
-            prompt = question.get("prompt")
-            if question_type not in ("choice", "fill_blank"):
-                raise ValueError(f"第 {index + 1} 题 type 无效。")
-            if not isinstance(prompt, str) or not prompt.strip():
-                raise ValueError(f"第 {index + 1} 题 prompt 不能为空。")
-
-            reference_answer = question.get("reference_answer")
-            if not isinstance(reference_answer, str) or not reference_answer.strip():
-                raise ValueError(f"第 {index + 1} 题 reference_answer 不能为空。")
-
-            explanation = question.get("explanation", "")
-            if not isinstance(explanation, str):
-                raise ValueError(f"第 {index + 1} 题 explanation 必须是字符串。")
-
-            if question_type == "choice":
-                self._validate_choice_question(question, index)
-            else:
-                self._validate_fill_blank_question(question, index)
-
-        return questions
-
-    def _validate_choice_question(self, question, index):
-        options = question.get("options")
-        if not isinstance(options, list) or len(options) < 2:
-            raise ValueError(f"第 {index + 1} 题至少需要两个选项。")
-
-        keys = []
-        for option in options:
-            if not isinstance(option, dict):
-                raise ValueError(f"第 {index + 1} 题存在无效选项。")
-            key = option.get("key")
-            text = option.get("text")
-            if not isinstance(key, str) or not key.strip():
-                raise ValueError(f"第 {index + 1} 题存在空选项 key。")
-            if not isinstance(text, str):
-                raise ValueError(f"第 {index + 1} 题存在无效选项文本。")
-            keys.append(key)
-
-        if len(keys) != len(set(keys)):
-            raise ValueError(f"第 {index + 1} 题存在重复选项 key。")
-        if question.get("reference_answer") not in keys:
-            raise ValueError(f"第 {index + 1} 题 reference_answer 不属于选项 key。")
-
-    def _validate_fill_blank_question(self, question, index):
-        prompt = question.get("prompt", "")
-        if prompt.count("______") != 1:
-            raise ValueError(f"第 {index + 1} 题必须且只能包含一个 ______。")
-
-    def _strip_legacy_exercise_answers(self, exercise):
-        if not isinstance(exercise, dict):
-            return False
-        questions = exercise.get("questions")
-        if not isinstance(questions, list):
-            return False
-
-        changed = False
-        for question in questions:
-            if isinstance(question, dict) and "answer" in question:
-                del question["answer"]
-                changed = True
-        return changed
-
-    def _upgrade_legacy_exercise_if_possible(self, passage_dir):
-        exercise_path = Path(passage_dir) / "exercise.json"
-        if not exercise_path.exists() or not exercise_path.is_file():
-            return
-        try:
-            exercise = read_json(exercise_path)
-            changed = self._strip_legacy_exercise_answers(exercise)
-            if changed:
-                write_json_atomic(exercise_path, exercise)
-            self._validate_exercise(exercise)
-        except Exception:
-            return
-
-    def _merge_exercise_answers(self, questions, saved_answers):
-        result = []
-        for index, question in enumerate(questions):
-            item = dict(question)
-            user_answer = ""
-            user_note = ""
-
-            if index < len(saved_answers):
-                saved = saved_answers[index]
-                if isinstance(saved, dict):
-                    raw_answer = saved.get("user_answer", "")
-                    raw_note = saved.get("user_note", "")
-                    if isinstance(raw_answer, str):
-                        user_answer = raw_answer
-                    if isinstance(raw_note, str):
-                        user_note = raw_note
-
-            if item.get("type") == "choice" and user_answer:
-                valid_keys = []
-                for option in item.get("options", []):
-                    valid_keys.append(option.get("key"))
-                if user_answer not in valid_keys:
-                    user_answer = ""
-
-            item["answer"] = {
-                "user_answer": user_answer,
-                "user_note": user_note,
-            }
-            result.append(item)
-        return result
-
     def _load_answers_for_passage(self, passage_dir, user_folder):
         passage_dir = Path(passage_dir)
         book_dir = self.book_dir_for_passage(passage_dir)
@@ -805,13 +351,7 @@ class EnglishData:
         answer_path = book_dir / "userdata" / user_folder / "answer_sheet.json"
         answer_sheet = read_json(answer_path)
         self._validate_answer_sheet(answer_sheet, user_folder)
-
-        passage_answers = answer_sheet["answers"].get(passage_dir.name, [])
-        if not isinstance(passage_answers, list):
-            raise ValueError(
-                f"{user_folder} 的 {passage_dir.name} answers 必须是数组。"
-            )
-        return passage_answers
+        return answer_sheet["answers"].get(passage_dir.name)
 
     def _prepare_book_userdata(self, book_dir, book, book_path, bookname):
         warnings = []
@@ -895,20 +435,13 @@ class EnglishData:
             raise ValueError("answer_sheet.json 必须是 JSON object。")
 
         username = data.get("username")
-        if not isinstance(username, str) or not username.strip():
+        if not isinstance(username, str) or not username:
             raise ValueError("answer_sheet.json 的 username 不能为空。")
         if username != username.strip():
             raise ValueError("answer_sheet.json 的 username 不能包含首尾空格。")
 
-        if user_folder == DEFAULT_USER_FOLDER:
-            if username != DEFAULT_USERNAME:
-                raise ValueError(
-                    f"Default User 的 username 必须是 {DEFAULT_USERNAME}。"
-                )
-        else:
-            clean_username, expected_folder = self._normalize_username_for_folder(
-                username
-            )
+        if user_folder != DEFAULT_USER_FOLDER:
+            clean_username, expected_folder = self._normalize_username_for_folder(username)
             if clean_username != username:
                 raise ValueError("username 与保存时的完整用户名不一致。")
             if expected_folder != user_folder:
@@ -918,26 +451,30 @@ class EnglishData:
         if not isinstance(answers, dict):
             raise ValueError("answer_sheet.json 的 answers 必须是 JSON object。")
 
-        for passage_folder, passage_answers in answers.items():
+        for passage_folder, passage_answer in answers.items():
             if not isinstance(passage_folder, str) or not passage_folder:
                 raise ValueError("answer_sheet.json 包含无效 Passage key。")
-            if not isinstance(passage_answers, list):
-                raise ValueError(
-                    f"{passage_folder} 的 answers 必须是数组。"
-                )
-            for answer in passage_answers:
-                if not isinstance(answer, dict):
-                    raise ValueError(
-                        f"{passage_folder} 包含无效答案结构。"
-                    )
-                if not isinstance(answer.get("user_answer"), str):
-                    raise ValueError(
-                        f"{passage_folder} 的 user_answer 必须是字符串。"
-                    )
-                if not isinstance(answer.get("user_note"), str):
-                    raise ValueError(
-                        f"{passage_folder} 的 user_note 必须是字符串。"
-                    )
+            if not isinstance(passage_answer, dict):
+                raise ValueError(f"{passage_folder} 的答案必须是 JSON object。")
+            exercise_type = passage_answer.get("type")
+            if not isinstance(exercise_type, str) or not exercise_type:
+                raise ValueError(f"{passage_folder} 的 type 不能为空。")
+            entries = passage_answer.get("answers")
+            if not isinstance(entries, list):
+                raise ValueError(f"{passage_folder} 的 answers 必须是数组。")
+            seen = set()
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    raise ValueError(f"{passage_folder} 包含无效答案结构。")
+                number = entry.get("number")
+                answer = entry.get("answer")
+                if not isinstance(number, int) or number < 1:
+                    raise ValueError(f"{passage_folder} 包含无效 number。")
+                if number in seen:
+                    raise ValueError(f"{passage_folder} 包含重复 number：{number}")
+                seen.add(number)
+                if not isinstance(answer, str):
+                    raise ValueError(f"{passage_folder} 的 answer 必须是字符串。")
 
     def _current_userdata_references(self, book):
         raw_userdata = book.get("userdata")
@@ -1049,78 +586,6 @@ class EnglishData:
         if self._is_windows_reserved_name(folder_name):
             raise ValueError(f"用户文件夹名是 Windows 保留名称：{folder_name}")
 
-    def _validate_vocabulary(self, data):
-        words = data.get("words")
-        if not isinstance(words, list):
-            raise ValueError("vocabulary.json 的 words 必须是数组。")
-
-        seen_word = set()
-        seen_stem = set()
-        for entry in words:
-            if not isinstance(entry, dict):
-                raise ValueError("Vocabulary entry 必须是 JSON object。")
-
-            word = str(entry.get("word", "")).strip()
-            if not word:
-                raise ValueError("Vocabulary word 不能为空。")
-            folded = word.casefold()
-            if folded in seen_word:
-                raise ValueError(f"重复 Vocabulary word：{word}")
-            seen_word.add(folded)
-            stem = self.audio_stem(word)
-            if stem in seen_stem:
-                raise ValueError(f"Vocabulary 音频文件名冲突：{word}")
-            seen_stem.add(stem)
-
-            if not isinstance(entry.get("phonetic_uk", ""), str):
-                raise ValueError(f"{word} 的 phonetic_uk 无效。")
-            if not isinstance(entry.get("phonetic_us", ""), str):
-                raise ValueError(f"{word} 的 phonetic_us 无效。")
-
-            audio = entry.get("audio")
-            if not isinstance(audio, dict):
-                raise ValueError(f"{word} 缺少 audio。")
-            expected_uk = f"audio_vocabulary/{stem}_uk.mp3"
-            expected_us = f"audio_vocabulary/{stem}_us.mp3"
-            if audio.get("uk") != expected_uk:
-                raise ValueError(f"{word} 的 uk 音频路径应为 {expected_uk}。")
-            if audio.get("us") != expected_us:
-                raise ValueError(f"{word} 的 us 音频路径应为 {expected_us}。")
-
-            meanings = entry.get("meanings")
-            if not isinstance(meanings, list):
-                raise ValueError(f"{word} 的 meanings 必须是数组。")
-            for meaning in meanings:
-                if not isinstance(meaning, dict):
-                    raise ValueError(f"{word} 存在无效 meaning。")
-                if not isinstance(meaning.get("pos", ""), str):
-                    raise ValueError(f"{word} 的 POS 无效。")
-                if not isinstance(meaning.get("meaning", ""), str):
-                    raise ValueError(f"{word} 的 meaning 文本无效。")
-
-
-    def _normalize_vocabulary_word(self, word):
-        return " ".join(str(word).split()).strip()
-
-    def _find_vocabulary_index(self, words, word):
-        target = self._normalize_vocabulary_word(word).casefold()
-        if not target:
-            return -1
-
-        for index, entry in enumerate(words):
-            existing = self._normalize_vocabulary_word(entry.get("word", ""))
-            if existing.casefold() == target:
-                return index
-        return -1
-
-    def _find_segment(self, passage, sid):
-        self._sid_number(sid)
-        for paragraph in passage["paragraphs"]:
-            for segment in paragraph:
-                if segment.sid == sid:
-                    return segment
-        raise ValueError(f"找不到 Segment：{sid}")
-
     def _best_passage_label(self, passage_dir, folder_name):
         try:
             data = read_json(Path(passage_dir) / "passage.json")
@@ -1144,24 +609,5 @@ class EnglishData:
         if "/" in folder_name or "\\" in folder_name:
             raise ValueError(f"Passage 必须引用 passages 下的直接子文件夹：{folder_name}")
 
-    def _validate_next_sid(self, value):
-        if not isinstance(value, int):
-            raise ValueError("next_sid 必须是整数。")
-        if value < 1 or value > 1000:
-            raise ValueError("next_sid 必须位于 1 到 1000。")
 
-    def _sid_number(self, sid):
-        if not isinstance(sid, str):
-            raise ValueError(f"非法 sid：{sid}")
-        match = SID_PATTERN.fullmatch(sid)
-        if match is None:
-            raise ValueError(f"非法 sid：{sid}；必须使用小写 s001 形式。")
-        number = int(match.group(1))
-        if number < 1 or number > 999:
-            raise ValueError(f"非法 sid：{sid}")
-        return number
-
-    def _validate_accent(self, accent):
-        if accent not in ("uk", "us"):
-            raise ValueError("accent 必须是 uk 或 us。")
 

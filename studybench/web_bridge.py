@@ -2,7 +2,7 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 
 class WebBridge(QObject):
-    vocabulary_changed = Signal()
+    vocabulary_add_requested = Signal(str)
     gen_audio_requested = Signal()
     exercise_dirty_changed = Signal(bool)
     exercise_save_requested = Signal(str)
@@ -85,14 +85,7 @@ class WebBridge(QObject):
         if not self._has_passage():
             self.message.emit("当前没有打开 Passage。")
             return
-
-        try:
-            result = self.english_data.add_word(self.passage_dir, word)
-            if result.get("ok"):
-                self.vocabulary_changed.emit()
-            self.message.emit(result.get("message", ""))
-        except Exception as error:
-            self.message.emit(str(error))
+        self.vocabulary_add_requested.emit(str(word))
 
     @Slot(bool)
     def setExerciseDirty(self, dirty):

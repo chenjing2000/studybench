@@ -1,98 +1,74 @@
 # StudyBench — PySide6 Edition
 
-StudyBench is a simple offline English intensive-reading bench built with PySide6.
+StudyBench is an offline English intensive-reading bench built with PySide6.
 
 ## Stack
 
 - Desktop shell: PySide6 Qt Widgets
-- Left panel: native Qt Book/Passage tree with `选择文件夹`
+- Left panel: native Qt Book/Passage tree
 - Center: `QWebEngineView` + local HTML/CSS/plain JavaScript
 - Right panel: native Qt Vocabulary widgets
-- Python ↔ page: thin `QWebChannel` bridge
+- Python ↔ page: `QWebChannel`
 - Audio playback: one global `QMediaPlayer` + `QAudioOutput`
-- Audio generation: integrated MDX/MDD + Edge-TTS extractor, run in a background thread
+- Audio generation: integrated MDX/MDD + Edge-TTS extractor
 - Persistence: JSON + filesystem only
 - Environment: `uv`
 - Entry point: root `main.py`
 
-No Vue, React, npm, Vite, FastAPI, Flask, database, or local HTTP server is used.
-
-## Install and run
-
 ```bash
 uv sync
 uv run python main.py
-```
-
-Tests:
-
-```bash
 uv run pytest
 ```
 
+## V0.7.0 core architecture
 
-## Skills
-
-StudyBench currently includes three English-data skills:
-
-- `skills/passage_segment/SKILL.md`: converts clean Passage text into the current `passage.json` Segment structure.
-- `skills/image_to_passage/SKILL.md`: reads one or more English reading images, recovers the Passage body, drafts a title when the source has none, and creates `passage.json` plus optional `exercise.json`.
-- `skills/vocabulary_enrichment/SKILL.md`: uses `passage.json` as context to enrich meanings in `vocabulary.json` and conservatively add useful canonical multi-word expressions.
-
-## V0.4.0 data model
-
-V0.4.0 separates textbook Exercise data from user answers and adds lightweight per-Book accounts. It is a breaking upgrade for old embedded Exercise answers: legacy `question.answer` data is removed and is not migrated.
-
-A Library contains Book folders. A valid Book has `book.json`, a non-empty ordered Passage list, and every listed Passage must have a valid `passage.json`. Each Book also owns a `userdata/` area.
+V0.7.0 keeps the V0.6.0 Article architecture and adds a second decoupled core module for Vocabulary. Passage behavior is still defined by the Article class family rather than a `tts_enabled` field. StudyBench has two independent base Article families under `studybench/article_classes/`:
 
 ```text
-english/
-└── english_reading/
-    ├── book.json
-    ├── passages/
-    │   └── human_origins/
-    │       ├── passage.json
-    │       ├── vocabulary.json
-    │       └── exercise.json
-    └── userdata/
-        ├── default_user/
-        │   └── answer_sheet.json
-        └── chen jing/
-            └── answer_sheet.json
+Article
+├── ArticleChoice
+└── ArticleAnswer
+
+ArticleBlank
+├── ArticleCloze
+├── ArticleClozeWords
+└── ArticleClozeSentences
 ```
 
-`book.json`:
+`Article` represents a complete readable Passage and owns Passage Audio/TTS capabilities. `ArticleBlank` represents a Passage containing `[[n]]` answer blanks and deliberately has no Passage Audio/TTS methods.
+
+The module is physically separated from the main window:
+
+```text
+studybench/
+├── main_window.py
+├── audio_config.py
+├── english_data.py
+└── article_classes/
+    ├── factory.py
+    ├── utils.py
+    ├── base_article_classes/
+    │   ├── article.py
+    │   └── article_blank.py
+    └── extended_article_classes/
+        ├── article_choice.py
+        ├── article_answer.py
+        ├── article_cloze.py
+        ├── article_cloze_words.py
+        └── article_cloze_sentences.py
+```
+
+## Passage data
+
+### `Article` family
+
+Every Segment has `sid`, `text`, and standard UK/US Passage audio paths:
 
 ```json
 {
-  "bookname": "English Reading",
-  "passages": ["human_origins"],
-  "userdata": ["default_user", "chen jing"]
-}
-```
-
-`userdata[]` stores user folder names in display order. `default_user` is always the first entry. Older Books without `userdata` are upgraded automatically and receive the system Default User. Userdata errors never invalidate the textbook Book itself.
-
-## Library loading
-
-Click `选择文件夹` above the left tree and choose a Library root. The program scans only first-level subfolders containing `book.json`.
-
-- valid Books are sorted by `bookname`;
-- Passage order follows `book.json.passages[]`;
-- an empty Book is invalid;
-- if any listed Passage has a core error, the entire Book is omitted;
-- user-account errors are reported but do not hide an otherwise valid Book;
-- switching Libraries rebuilds the tree from scratch;
-- the last Library path is stored in `settings.json`.
-
-## Passage and Segment data
-
-The only permanent artificial ID is lowercase SID: `s001 ... s999`. `next_sid` is the non-reusing high-water mark.
-
-```json
-{
-  "title": "How Did Humans Come to Earth?",
-  "next_sid": 3,
+  "title": "A Complete Article",
+  "next_sid": 2,
   "paragraphs": [
     {
       "paragraph": [
@@ -110,126 +86,245 @@ The only permanent artificial ID is lowercase SID: `s001 ... s999`. `next_sid` i
 }
 ```
 
-Every Segment stores its expected UK/US audio paths before the MP3 files exist. Segment text contains no artificial trailing spaces; the renderer inserts one normal space between adjacent Segments in a Paragraph.
+The complete-Article family rejects `[[n]]` placeholders.
 
-## Vocabulary
+### `ArticleBlank` family
 
-`vocabulary.json` is optional and has no WID. The first selected word creates it when necessary. Each entry stores predeclared UK/US paths under `audio_vocabulary/`; the audio files may be absent until `Gen Audio` creates them. Import validates the incoming file and then treats it as the authoritative replacement.
-
-Each Vocabulary entry has three 16×16 rounded SVG action buttons in a floating overlay at the far right, with **3 px** between adjacent buttons. The SVG resources live under `studybench/resources/icons/vocabulary/`. The first entry disables up, the last disables down, and deleting an entry never removes existing MP3 files. Alternating `#FFFFFF` / `#F5F6F2` backgrounds are recalculated after move/delete refreshes.
-
-The right-panel header uses English `show` / `hide` for Vocabulary highlighting, alongside the existing export/import controls.
-
-## Exercise and user answers
-
-`exercise.json` is optional and contains textbook Question definitions only. It never stores user data. There is no QID. Question number is `questions[]` array position + 1.
+Blank Articles keep the same Paragraph/Segment/SID structure but Segment objects have no `audio` property:
 
 ```json
 {
-  "questions": [
+  "title": "A Blank Article",
+  "next_sid": 2,
+  "paragraphs": [
     {
-      "type": "choice",
-      "prompt": "...",
-      "options": [
-        {"key": "A", "text": "..."},
-        {"key": "B", "text": "..."}
-      ],
-      "reference_answer": "B",
-      "explanation": "..."
+      "paragraph": [
+        {
+          "sid": "s001",
+          "text": "He started to [[1]] his parents."
+        }
+      ]
     }
   ]
 }
 ```
 
-User answers are stored separately in the selected account's `answer_sheet.json`:
+Each valid `[[n]]` number appears once. `ArticleBlank` requires at least one placeholder and forbids Segment `audio`.
+
+## Exercise types
+
+`exercise.json` is optional. Pure `Article` / `ArticleBlank` Passages have no Exercise file. Supported exercise types are:
+
+- `article_choice`
+- `article_answer`
+- `article_cloze`
+- `article_cloze_words`
+- `article_cloze_sentences`
+
+### `article_choice`
+
+```json
+{
+  "type": "article_choice",
+  "questions": [
+    {
+      "number": 1,
+      "prompt": "Which answer is correct?",
+      "options": [
+        {"key": "A", "text": "..."},
+        {"key": "B", "text": "..."}
+      ],
+      "reference_answer": "B",
+      "explanation": ""
+    }
+  ]
+}
+```
+
+Choice prompts may not contain `[[n]]`.
+
+### `article_answer`
+
+```json
+{
+  "type": "article_answer",
+  "questions": [
+    {
+      "number": 1,
+      "prompt": "How was the dress?",
+      "reference_answer": "It was a bit small.",
+      "explanation": ""
+    }
+  ]
+}
+```
+
+### `article_cloze`
+
+Each blank owns its own option set:
+
+```json
+{
+  "type": "article_cloze",
+  "items": [
+    {
+      "number": 1,
+      "options": [
+        {"key": "A", "text": "watch"},
+        {"key": "B", "text": "help"}
+      ],
+      "reference_answer": "B",
+      "explanation": ""
+    }
+  ]
+}
+```
+
+### `article_cloze_words`
+
+```json
+{
+  "type": "article_cloze_words",
+  "items": [
+    {
+      "number": 1,
+      "cue": "bright",
+      "reference_answer": "brightly",
+      "explanation": ""
+    }
+  ]
+}
+```
+
+### `article_cloze_sentences`
+
+Sentence options are shared by the whole exercise:
+
+```json
+{
+  "type": "article_cloze_sentences",
+  "options": [
+    {"key": "A", "text": "Sentence A."},
+    {"key": "B", "text": "Sentence B."}
+  ],
+  "items": [
+    {
+      "number": 1,
+      "reference_answer": "B",
+      "explanation": ""
+    }
+  ]
+}
+```
+
+For the three `ArticleBlank` exercise types, `items[].number` must match the Passage `[[n]]` placeholders exactly.
+
+## Factory and fallback
+
+`article_classes/factory.py` is the single Article creation entry point.
+
+- supported `exercise.type` → instantiate the matching extended class and validate strictly;
+- no `exercise.json`, no `[[n]]` → `Article`;
+- no `exercise.json`, with `[[n]]` → `ArticleBlank`;
+- unsupported exercise type → fall back by the same placeholder rule and report a non-blocking warning;
+- malformed JSON or invalid data for a supported type → error, never silent fallback.
+
+## Rendering
+
+The center page has two Passage renderers:
+
+- `Article`: paragraph play buttons, Segment audio hover/right-click, `Gen Audio`, British/American switch, Read All, Stop;
+- `ArticleBlank`: no Passage Audio controls or hover; `[[n]]` is rendered as a numbered blank.
+
+Exercise rendering is kept in `studybench/web/exercise.js` and is separate from Passage rendering:
+
+- `ArticleChoice`: vertical RadioButton choices;
+- `ArticleAnswer`: expandable textboxes;
+- `ArticleCloze`: one horizontal RadioButton row per blank;
+- `ArticleClozeWords`: `number + cue + textbox`;
+- `ArticleClozeSentences`: shared sentence option list followed by numbered short textboxes.
+
+Vocabulary selection/highlighting works in both Passage families.
+
+## Answer sheet
+
+Textbook answers stay in `exercise.json`; user answers are stored separately per Book account.
 
 ```json
 {
   "username": "Chen Jing",
   "answers": {
-    "human_origins": [
-      {
-        "user_answer": "B",
-        "user_note": ""
-      }
-    ]
+    "human_origins": {
+      "type": "article_choice",
+      "answers": [
+        {"number": 1, "answer": "A"},
+        {"number": 2, "answer": ""}
+      ]
+    }
   }
 }
 ```
 
-The Passage folder name selects the answer array, and the Question array index selects the individual answer. If a Question is added later, missing answers are shown as empty. When the user next presses Save, the current Passage's answer array is rewritten to match the current Question count. Other Passage answers remain untouched.
+All Exercise types use the same answer record: `number + answer`. RadioButton exercises store the option key; textbox exercises store the typed text. Empty answers remain empty strings in memory. A Passage entry is omitted from disk when every answer is empty.
 
-When the current Passage has Exercise questions, the center Exercise area shows `Save / 选项提示 / 参考答案 / Clear` at the bottom. Passages without Exercise questions show no action row. Editing a radio choice, fill blank, or note only marks the page dirty; it does not write JSON immediately. `Save` writes the complete current Passage answer array atomically. Leaving the current answer context with unsaved edits prompts `Save / Discard / Cancel`.
+Answer edits are automatically saved after a short debounce. Leaving the current Passage/Book or closing StudyBench flushes dirty answers before the action continues.
 
-## Lightweight accounts
+## Vocabulary module
 
-Every Book has a system account:
+Vocabulary management is decoupled from `MainWindow`, `EnglishData`, and the Article hierarchy. The reusable core lives under `studybench/vocabulary/`:
 
 ```text
-Display name: Default User
-Folder:       default_user
+studybench/
+├── article_classes/
+├── vocabulary/
+│   ├── word.py
+│   ├── word_cell.py
+│   ├── vocabulary.py
+│   ├── vocabulary_io.py
+│   ├── vocabulary_presenter.py
+│   └── vocabulary_audio_service.py
+├── main_window.py
+└── widgets/
+    └── vocabulary_panel.py
 ```
 
-It is created automatically if missing. Program startup and every Book switch use Default User. The left sidebar shows the complete current username and three buttons: `register`, `sign in`, and `sign out`.
+The responsibilities are intentionally separated:
 
-- `register` asks only for a username, creates its user folder and `answer_sheet.json`, adds the folder to `book.json.userdata`, then signs in automatically.
-- `sign in` is a drop-down of already registered full usernames; there is no password.
-- `sign out` switches back to Default User and is disabled while Default User is active.
-- switching Passage within the same Book keeps the current account; switching Book returns to that Book's Default User.
+- `Word`: spelling, UK/US phonetics, and the existing plain `meanings` list. There is no `WordMeaning` class.
+- `WordCell`: composition wrapper around one `Word`, plus UK/US audio paths and a UI-neutral render payload whose explicit `rows` describe the word, UK/US phonetics/speaker targets, and meaning lines.
+- `Vocabulary`: ordered `WordCell` collection only; add/remove/find/reorder/replace operations live here.
+- `VocabularyIO`: strict `vocabulary.json` loading/saving and the existing audio-path validation rules.
+- `VocabularyPresenter`: list presentation data such as alternating row backgrounds and per-cell render payloads.
+- `VocabularyAudioService`: MDX/MDD → dictionary audio → Edge-TTS fallback; it updates the in-memory Vocabulary but does not own the real `vocabulary.json` persistence.
 
-For normal accounts, the folder name is the trimmed full username converted to lowercase. Other legal filename characters are preserved, so names such as `Chen Jing`, `Abcd_1234`, `Abcd+1234`, and `张三李四` are supported. Windows-illegal filename characters and reserved names are rejected. Username effective length must be at least 8, where ASCII letters/digits count as 1 and Chinese characters count as 2.
+The right-side `VocabularyPanel` remains a PySide6 application view outside the reusable module. It consumes presenter payloads and emits user actions. Passage-word matching and show/hide highlighting also remain outside `studybench/vocabulary/`; they stay in the StudyBench application/web bridge layer.
 
-## Gen Audio
+The external `vocabulary.json` schema is unchanged and remains flat for easy manual editing. The right panel still keeps export/import at the top and an equal-width bottom row:
 
-The center control row now starts with `Gen Audio`. It processes only the Passage that was open when the button was clicked. While generation is running, only `Gen Audio` is disabled; Book/Passage navigation, Vocabulary work, Exercises, and playback of already existing audio remain usable. Status messages use the same ordinary 5-second status-bar behavior as the rest of StudyBench.
-
-Each Library root owns an `audio_config.json`. If it is missing when the Library is selected, StudyBench creates a complete template. Only these five runtime fields are validated: `mdx_path`, `mdd_path`, `uk_voice`, `us_voice`, and `wait_seconds`. Voice option fields and any other extra fields are ignored by validation. The generated template leaves a blank line between top-level fields for readability.
-
-```json
-{
-  "mdx_path": "",
-
-  "mdd_path": "",
-
-  "uk_voice": "en-GB-SoniaNeural",
-
-  "uk_voice_options": [
-    "en-GB-SoniaNeural",
-    "en-GB-LibbyNeural",
-    "en-GB-RyanNeural"
-  ],
-
-  "us_voice": "en-US-JennyNeural",
-
-  "us_voice_options": [
-    "en-US-JennyNeural",
-    "en-US-AriaNeural",
-    "en-US-GuyNeural"
-  ],
-
-  "wait_seconds": 2
-}
+```text
+[ show / hide ] [ gen words audio ]
 ```
 
-For Windows dictionary paths, use either `C:/dicts/oxford.mdx` / `C:/dicts/oxford.mdd` or JSON-escaped backslashes such as `C:\\dicts\\oxford.mdx`. Do not use Python raw-string syntax such as `r"..."` inside JSON.
+`gen words audio` continues to write under `audio_vocabulary/`.
 
-Before the background job starts, StudyBench ensures that the current Passage contains both `audio/` and `audio_vocabulary/`. Vocabulary generation first asks the configured MDX/MDD dictionary for UK/US IPA and dictionary audio. Missing Vocabulary audio falls back to Edge-TTS. Passage Segment audio is generated with Edge-TTS according to each Segment's declared `audio.uk` / `audio.us` path. Existing non-empty audio is not overwritten.
+## Passage audio
 
-StudyBench and the extractor share a short Vocabulary write lock. The extractor reloads the newest `vocabulary.json` immediately before saving phonetic updates, so entries added, deleted, or replaced while `Gen Audio` is running are preserved as the newest authoritative state. A word deleted during generation is not re-added by the extractor. Newly added words that were not part of the extractor's earlier snapshot are simply handled by a later `Gen Audio` run.
+Only the `Article` family supports Passage audio generation. The center `Gen Audio` pipeline creates missing `audio/{sid}_uk.mp3` and `audio/{sid}_us.mp3` files. `ArticleBlank` has no Passage audio methods and cannot invoke Passage TTS.
 
-The integrated extractor now works only on the two source files directly inside the captured Passage directory: `passage.json` and optional `vocabulary.json`. It no longer recursively scans nested folders or uses a run-local processed-file registry, because `Gen Audio` is intentionally scoped to one Passage.
+Passage Audio and Vocabulary Audio remain independent pipelines and only one generation job may run at a time.
 
-Each Passage may also contain `cache/studybench.log`. The log is append-only diagnostic cache: Passage-open summaries, missing/playback audio warnings, Gen Audio configuration, extractor summaries, errors, elapsed time, and the final result are written there. Unexpected worker exceptions include a traceback. Logging failure never blocks StudyBench, and the entire `cache/` directory is ignored by Git and may be deleted at any time.
+## Accounts
 
-## Current UI details retained
+Each Book has a system `Default User` account plus optional registered local accounts. `answer_sheet.json` belongs to each account. Registration/sign-in/sign-out behavior remains local and password-free.
 
-- Segment hover: background `#EBEEE8`, text `#BA5140`.
-- Passage/Exercise native selection background: `#f6bec8`.
-- Vocabulary highlight background: `#d4bf89`.
-- Vocabulary add `+`: `#dd7694`; it follows browser `selectionchange` continuously.
-- Exercises allow normal selection but never show the Vocabulary `+` button.
-- Vocabulary headword color: `#4c8045`.
-- Selected Passage background: `#e0e0d0`.
-- Vocabulary highlight button defaults to `show`; clicking it turns highlights on and changes the button to `hide`.
+## Skills
 
-The frozen English data rules are in `docs/English_Module_V0.4_Specification.md`; audio generation behavior is in `docs/Audio_Generation_V0.3_Specification.md`.
+The package still contains:
+
+- `skills/passage_segment/SKILL.md`
+- `skills/image_to_passage/SKILL.md`
+- `skills/vocabulary_enrichment/SKILL.md`
+
+The skills remain packaged separately from the V0.7.0 Vocabulary-module refactor; this release does not change their data rules.
+
+Detailed program rules are in `docs/English_Module_V0.5_Specification.md`, `docs/Audio_Generation_V0.4_Specification.md`, and `docs/Vocabulary_Module_V0.7_Specification.md`.

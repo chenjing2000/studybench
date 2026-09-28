@@ -1,0 +1,136 @@
+#exerciseSection {
+  margin-top: 12pt;
+}
+
+#exerciseSection ::selection {
+  background: #f6bec8;
+  color: inherit;
+}
+
+.exercise-title {
+  margin: 0 0 12pt 0;
+  font-size: 14pt;
+  font-weight: 700;
+}
+
+.question {
+  margin: 0 0 12pt 0;
+  padding: 0 0 12pt 0;
+  border-bottom: 1px solid #eeeeee;
+}
+
+.question:last-child {
+  border-bottom: 0;
+}
+
+.question-prompt {
+  margin: 0 0 6pt 0;
+  line-height: 1.6;
+  font-size: 12pt;
+}
+
+.question-options {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 6pt 1.5em;
+}
+
+.option-row {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12pt;
+  line-height: 1.5;
+}
+
+.option-row input {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.option-text {
+  line-height: 1.5;
+  font-size: 12pt;
+}
+
+.exercise-textbox {
+  padding: 4px 6px;
+  border: 1px solid #aaa;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12pt;
+  line-height: 1.5;
+}
+
+.answer-textbox {
+  display: block;
+  width: 100%;
+  min-height: 34px;
+  resize: none;
+  overflow: hidden;
+}
+
+.cloze-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cloze-options {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.fill-row,
+.sentence-answer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.exercise-number {
+  min-width: 24px;
+  font-size: 12pt;
+}
+
+.exercise-cue {
+  min-width: 86px;
+  font-size: 12pt;
+}
+
+.word-textbox {
+  width: min(260px, 60%);
+}
+
+.sentence-option-pool {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14pt 0;
+  font-size: 12pt;
+  line-height: 1.55;
+}
+
+.sentence-answer-list {
+  display: grid;
+  gap: 8px;
+}
+
+.sentence-answer-row {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sentence-key-textbox {
+  width: 46px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+#exerciseSection input:disabled,
+#exerciseSection textarea:disabled {
+  opacity: 0.6;
+}

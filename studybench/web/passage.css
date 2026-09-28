@@ -51,6 +51,11 @@ body {
   margin: 0 0 6pt 0;
 }
 
+.paragraph-row-no-audio {
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 0;
+}
+
 .paragraph-play {
   width: 28px;
   height: 28px;
@@ -86,10 +91,13 @@ body {
 .segment {
   cursor: text;
   border-radius: 4px;
+}
+
+.segment.audio-enabled {
   transition: background-color 120ms ease, color 120ms ease;
 }
 
-.segment:hover {
+.segment.audio-enabled:hover {
   background: #EBEEE8;
   color: #BA5140;
   box-shadow: 0 2px 0 #EBEEE8, 0 -2px 0 #EBEEE8;
@@ -103,8 +111,18 @@ body {
 
 
 .vocabulary-match {
-  background: #d4bf89;
-  box-shadow: 0 2px 0 #d4bf89, 0 -2px 0 #d4bf89;
+  background: #f9d3e3;
+  box-shadow: 0 2px 0 #f9d3e3, 0 -2px 0 #f9d3e3;
+}
+
+
+.blank-placeholder {
+  display: inline-block;
+  min-width: 4.2em;
+  margin: 0 0.12em;
+  text-align: center;
+  color: #555;
+  white-space: nowrap;
 }
 
 .passage-controls {
@@ -153,104 +171,6 @@ body {
   min-width: 58px;
 }
 
-#exerciseSection {
-  margin-top: 12pt;
-}
-
-.exercise-title {
-  margin: 0 0 12pt 0;
-  font-size: 14pt;
-  font-weight: 700;
-}
-
-.question {
-  margin: 0 0 12pt 0;
-  padding: 0 0 12pt 0;
-  border-bottom: 1px solid #eeeeee;
-}
-
-.question:last-child {
-  border-bottom: 0;
-}
-
-.question-prompt {
-  margin: 0 0 6pt 0;
-  line-height: 1.6;
-  font-size: 12pt;
-}
-
-.question-options {
-  display: grid;
-  gap: 5px;
-  margin: 0 0 6pt 1.5em;
-}
-
-.option-row {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.option-row input {
-  margin: 0;
-  flex: 0 0 auto;
-}
-
-.option-text {
-  line-height: 1.5;
-  font-size: 12pt;
-}
-
-.option-hint-error {
-  color: #c12c1f;
-}
-
-.fill-input {
-  min-width: 110px;
-  padding: 2px 5px;
-  border: 1px solid #aaa;
-  border-radius: 3px;
-  font-family: inherit;
-  font-size: 12pt;
-}
-
-.answer-info {
-  display: none;
-  margin-top: 6pt;
-  color: #555;
-  line-height: 1.55;
-  font-size: 12pt;
-}
-
-.question.reference-visible .answer-info {
-  display: block;
-}
-
-.answer-info p {
-  margin: 2px 0;
-}
-
-.user-note-label {
-  display: block;
-  margin-top: 6pt;
-  font-size: 12pt;
-  font-weight: 600;
-}
-
-.user-note {
-  display: block;
-  width: 100%;
-  min-height: 58px;
-  margin-top: 4px;
-  padding: 6px 7px;
-  border: 1px solid #c8c8c8;
-  border-radius: 4px;
-  resize: vertical;
-  font-family: inherit;
-  font-size: 12pt;
-  line-height: 1.5;
-}
-
 .selection-add {
   position: absolute;
   z-index: 1000;
@@ -271,17 +191,4 @@ body {
 .accent-button:disabled {
   cursor: default;
   opacity: 0.55;
-}
-
-.exercise-action-row {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 15px;
-  margin-top: 12pt;
-}
-
-.exercise-action-button {
-  width: 90px;
-  font-size: 11pt;
 }

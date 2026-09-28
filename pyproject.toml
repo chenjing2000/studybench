@@ -1,6 +1,6 @@
 [project]
 name = "studybench"
-version = "0.4.3"
+version = "0.7.0"
 description = "A simple offline English studybench built with PySide6."
 requires-python = ">=3.11,<3.12"
 dependencies = [

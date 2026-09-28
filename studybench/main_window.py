@@ -12,22 +12,34 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QMainWindow,
-    QMessageBox,
     QPushButton,
     QSplitter,
     QVBoxLayout,
     QWidget,
 )
 
-from .audio_config import inspect_audio_config, load_audio_config_for_run
-from .audio_generation import AudioGenerationSignals, generate_current_passage_audio
+from .audio_config import (
+    inspect_audio_config,
+    load_passage_tts_config_for_run,
+    load_vocabulary_audio_config_for_run,
+)
+from .audio_generation import (
+    VOCABULARY_AUDIO_JOB,
+    AudioGenerationSignals,
+    generate_passage_audio,
+    generate_vocabulary_audio,
+)
 from .audio_player import AudioPlayer
-from .audio_paths import ensure_passage_audio_directories
+from .audio_paths import (
+    ensure_passage_audio_directory,
+    ensure_vocabulary_audio_directory,
+)
 from .english_data import DEFAULT_USER_FOLDER, DEFAULT_USERNAME, EnglishData
 from .web_bridge import WebBridge
 from .window_settings import load_settings, save_settings
 from .widgets.english_tree import EnglishTree
 from .widgets.vocabulary_panel import VocabularyPanel
+from .vocabulary import Vocabulary, VocabularyIO, VocabularyPresenter, WordCell
 from .run_log import write_log
 
 
@@ -46,7 +58,9 @@ class MainWindow(QMainWindow):
         self.current_book_dir = ""
         self.current_passage_dir = ""
         self.current_payload = None
-        self.current_words = []
+        self.current_vocabulary = Vocabulary()
+        self.vocabulary_presenter = VocabularyPresenter()
+        self.vocabulary_lock = threading.RLock()
         self.current_accounts = []
         self.current_user_folder = DEFAULT_USER_FOLDER
         self.current_username = DEFAULT_USERNAME
@@ -59,7 +73,7 @@ class MainWindow(QMainWindow):
         self.restore_maximized = False
         self.restore_left_width = None
         self.restore_right_width = None
-        self.audio_generation_running = False
+        self.audio_job_running = False
         self.audio_generation_signals = AudioGenerationSignals()
 
         self.status_queue = []
@@ -157,7 +171,7 @@ class MainWindow(QMainWindow):
         self.english_tree.passage_selected.connect(self.open_passage)
         self.web_view.loadFinished.connect(self._web_page_loaded)
 
-        self.web_bridge.vocabulary_changed.connect(self.refresh_vocabulary)
+        self.web_bridge.vocabulary_add_requested.connect(self.add_vocabulary_word)
         self.web_bridge.gen_audio_requested.connect(self.start_gen_audio)
         self.web_bridge.exercise_dirty_changed.connect(
             self._exercise_dirty_changed
@@ -167,7 +181,7 @@ class MainWindow(QMainWindow):
         )
         self.web_bridge.message.connect(self.show_status)
         self.audio_generation_signals.result_ready.connect(
-            self._gen_audio_finished
+            self._audio_generation_finished
         )
 
         self.audio_player.state_changed.connect(self._audio_state_changed)
@@ -178,6 +192,9 @@ class MainWindow(QMainWindow):
         self.vocabulary_panel.delete_requested.connect(self.delete_vocabulary_word)
         self.vocabulary_panel.export_requested.connect(self.export_vocabulary)
         self.vocabulary_panel.import_requested.connect(self.import_vocabulary)
+        self.vocabulary_panel.gen_words_audio_requested.connect(
+            self.start_gen_words_audio
+        )
         self.vocabulary_panel.highlight_visibility_changed.connect(
             self.set_vocabulary_highlights_visible
         )
@@ -467,25 +484,17 @@ class MainWindow(QMainWindow):
     def _refresh_current_exercises(self):
         if not self.current_passage_dir or self.current_payload is None:
             return
-
         try:
-            questions, warnings = self.english_data.load_exercise_payload(
+            payload, warnings = self.english_data.load_passage_payload(
                 self.current_passage_dir,
                 self.current_user_folder,
-                self.current_payload.get("title", "Current Passage"),
             )
         except Exception as error:
             self.show_status(f"Exercise 无法刷新：{error}")
             return
-
-        self.current_payload["questions"] = questions
+        self.current_payload = payload
         self.exercise_dirty = False
-        if self.page_loaded:
-            payload = json.dumps(questions, ensure_ascii=False)
-            self.web_view.page().runJavaScript(
-                "window.setExercises(" + payload + ");"
-            )
-            self._set_exercise_save_allowed(self.current_user_available)
+        self._render_current_passage()
         self._queue_status_messages(warnings)
 
     def _exercise_dirty_changed(self, dirty):
@@ -512,19 +521,13 @@ class MainWindow(QMainWindow):
             return
 
         if self.current_payload is not None:
-            questions = self.current_payload.get("questions", [])
-            for index, answer in enumerate(answers):
-                if index >= len(questions):
-                    break
-                questions[index]["answer"] = {
-                    "user_answer": answer.get("user_answer", ""),
-                    "user_note": answer.get("user_note", ""),
-                }
+            answer_payload = self.current_payload.get("answers")
+            if isinstance(answer_payload, dict):
+                answer_payload["answers"] = answers
 
         self.exercise_dirty = False
         if self.page_loaded:
             self.web_view.page().runJavaScript("window.markExerciseSaved();")
-        self.show_status("答案已保存。")
         if self.pending_action_kind:
             kind = self.pending_action_kind
             value = self.pending_action_value
@@ -545,37 +548,12 @@ class MainWindow(QMainWindow):
             self._execute_action(kind, value)
             return
 
-        box = QMessageBox(self)
-        box.setWindowTitle("Unsaved answers")
-        box.setText("当前回答尚未保存。")
-        save_button = box.addButton("Save", QMessageBox.ButtonRole.AcceptRole)
-        discard_button = box.addButton(
-            "Discard",
-            QMessageBox.ButtonRole.DestructiveRole,
-        )
-        cancel_button = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-        box.exec()
-
-        clicked = box.clickedButton()
-        if clicked is save_button:
-            self.pending_action_kind = kind
-            self.pending_action_value = value
-            if self.page_loaded:
-                self.web_view.page().runJavaScript(
-                    "window.submitExerciseAnswers();"
-                )
-            return
-
-        if clicked is discard_button:
-            self.exercise_dirty = False
-            self._execute_action(kind, value)
-            return
-
-        if clicked is cancel_button:
-            self._restore_current_tree_selection()
-            return
-
-        self._restore_current_tree_selection()
+        self.pending_action_kind = kind
+        self.pending_action_value = value
+        if self.page_loaded:
+            self.web_view.page().runJavaScript("window.flushExerciseAnswers();")
+        else:
+            self._cancel_pending_action_after_save_failure()
 
     def _execute_action(self, kind, value):
         if kind == "library":
@@ -601,29 +579,69 @@ class MainWindow(QMainWindow):
         if self.current_passage_dir:
             self.english_tree.select_passage(self.current_passage_dir)
 
+    def _vocabulary_path(self):
+        if not self.current_passage_dir:
+            return None
+        return Path(self.current_passage_dir) / "vocabulary.json"
+
     def refresh_vocabulary(self):
         if not self.current_passage_dir:
-            self.current_words = []
-            self.vocabulary_panel.set_words([])
-            self._update_vocabulary_highlights([])
+            with self.vocabulary_lock:
+                self.current_vocabulary = Vocabulary()
+            self._refresh_vocabulary_view()
             return
 
         try:
-            self.current_words = self.english_data.get_vocabulary(
-                self.current_passage_dir
+            loaded = VocabularyIO.load(
+                self._vocabulary_path(),
+                allow_missing=True,
             )
-            self.vocabulary_panel.set_words(self.current_words)
-            self._update_vocabulary_highlights(self.current_words)
+            with self.vocabulary_lock:
+                self.current_vocabulary = loaded
+            self._refresh_vocabulary_view()
         except Exception as error:
-            self.current_words = []
-            self.vocabulary_panel.set_words([])
-            self._update_vocabulary_highlights([])
+            with self.vocabulary_lock:
+                self.current_vocabulary = Vocabulary()
+            self._refresh_vocabulary_view()
             title = "当前 Passage"
             if self.current_payload is not None:
-                title = self.current_payload.get("title", title)
+                title = self.current_payload.get("passage", {}).get("title", title)
             message = f"《{title}》：vocabulary.json 无法加载：{error}"
             write_log(self.current_passage_dir, "ERROR", message)
             self.show_status(message)
+
+    def _refresh_vocabulary_view(self):
+        with self.vocabulary_lock:
+            rows = self.vocabulary_presenter.build_list_payload(
+                self.current_vocabulary,
+                word_color="#3271ae",
+                even_background="#FFFFFF",
+                odd_background="#F5F6F2",
+            )
+            word_list = self.current_vocabulary.word_texts()
+        self.vocabulary_panel.set_rows(rows)
+        self._update_vocabulary_highlights(word_list)
+
+    def add_vocabulary_word(self, selected_word):
+        if not self.current_passage_dir:
+            self.show_status("当前没有打开 Passage。")
+            return
+
+        try:
+            cell = WordCell.for_new_word(selected_word)
+            with self.vocabulary_lock:
+                self.current_vocabulary.add(cell)
+                VocabularyIO.save(self.current_vocabulary, self._vocabulary_path())
+            self._refresh_vocabulary_view()
+            self.show_status(f"已添加 {cell.word.word}")
+        except Exception as error:
+            # Atomic persistence leaves the old file intact. Reload it if the
+            # in-memory mutation happened before a write failure.
+            try:
+                self.refresh_vocabulary()
+            except Exception:
+                pass
+            self.show_status(str(error))
 
     def set_vocabulary_highlights_visible(self, visible):
         if not self.page_loaded:
@@ -632,21 +650,18 @@ class MainWindow(QMainWindow):
         script = "window.setVocabularyHighlightsVisible(" + value + ");"
         self.web_view.page().runJavaScript(script)
 
-    def _update_vocabulary_highlights(self, words):
+    def _update_vocabulary_highlights(self, word_list=None):
         if not self.page_loaded:
             return
-
-        word_list = []
-        for item in words:
-            word = str(item.get("word", "")).strip()
-            if word:
-                word_list.append(word)
+        if word_list is None:
+            with self.vocabulary_lock:
+                word_list = self.current_vocabulary.word_texts()
 
         visible = self.vocabulary_panel.vocabulary_highlights_visible()
         value = "true" if visible else "false"
         script = (
             "window.setVocabularyWords("
-            + json.dumps(word_list, ensure_ascii=False)
+            + json.dumps(list(word_list), ensure_ascii=False)
             + ", "
             + value
             + ");"
@@ -654,7 +669,61 @@ class MainWindow(QMainWindow):
         self.web_view.page().runJavaScript(script)
 
     def start_gen_audio(self):
-        if self.audio_generation_running:
+        if self.audio_job_running:
+            return
+        if not self.library_dir:
+            self.show_status("尚未选择 Library 文件夹。")
+            return
+        if not self.current_passage_dir or self.current_payload is None:
+            self.show_status("当前没有打开 Passage。")
+            return
+        if self.current_payload.get("article_family") != "article":
+            self.show_status("当前 ArticleBlank 不具备 Passage Audio 能力。")
+            return
+
+        try:
+            config = load_passage_tts_config_for_run(self.library_dir)
+        except Exception as error:
+            write_log(
+                self.current_passage_dir,
+                "ERROR",
+                f"Gen Audio not started: {error}",
+            )
+            self.show_status(str(error))
+            return
+
+        passage_dir = str(Path(self.current_passage_dir))
+        try:
+            ensure_passage_audio_directory(passage_dir)
+        except Exception as error:
+            message = f"无法创建 Passage 音频目录：{error}"
+            write_log(passage_dir, "ERROR", message)
+            self.show_status(message)
+            return
+
+        self.audio_job_running = True
+        self._set_audio_job_buttons_enabled(False)
+
+        passage = self.current_payload.get("passage", {})
+        passage_title = passage.get("title", "Current Passage")
+        segment_count = self._current_segment_count()
+
+        thread = threading.Thread(
+            target=generate_passage_audio,
+            args=(
+                passage_dir,
+                config,
+                self.audio_generation_signals,
+                passage_title,
+                segment_count,
+            ),
+            daemon=True,
+            name="studybench-passage-audio",
+        )
+        thread.start()
+
+    def start_gen_words_audio(self):
+        if self.audio_job_running:
             return
         if not self.library_dir:
             self.show_status("尚未选择 Library 文件夹。")
@@ -663,55 +732,77 @@ class MainWindow(QMainWindow):
             self.show_status("当前没有打开 Passage。")
             return
 
+        with self.vocabulary_lock:
+            vocabulary = self.current_vocabulary
+            vocabulary_count = len(vocabulary)
+        if vocabulary_count == 0:
+            self.show_status("当前 Vocabulary 没有可处理的单词。")
+            return
+
         try:
-            config = load_audio_config_for_run(self.library_dir)
+            config = load_vocabulary_audio_config_for_run(self.library_dir)
         except Exception as error:
-            write_log(self.current_passage_dir, "ERROR", f"Gen Audio not started: {error}")
+            write_log(
+                self.current_passage_dir,
+                "ERROR",
+                f"Gen Words Audio not started: {error}",
+            )
             self.show_status(str(error))
             return
 
         passage_dir = str(Path(self.current_passage_dir))
         try:
-            ensure_passage_audio_directories(passage_dir)
+            ensure_vocabulary_audio_directory(passage_dir)
         except Exception as error:
-            message = f"无法创建音频目录：{error}"
+            message = f"无法创建 Vocabulary 音频目录：{error}"
             write_log(passage_dir, "ERROR", message)
             self.show_status(message)
             return
 
-        self.audio_generation_running = True
-        self._set_gen_audio_enabled(False)
+        self.audio_job_running = True
+        self._set_audio_job_buttons_enabled(False)
 
         passage_title = "Current Passage"
         if self.current_payload is not None:
-            passage_title = self.current_payload.get("title", passage_title)
-        segment_count = self._current_segment_count()
-        vocabulary_count = len(self.current_words)
+            passage_title = self.current_payload.get("passage", {}).get(
+                "title", passage_title
+            )
 
         thread = threading.Thread(
-            target=generate_current_passage_audio,
+            target=generate_vocabulary_audio,
             args=(
                 passage_dir,
                 config,
-                self.english_data.vocabulary_lock,
+                vocabulary,
+                self.vocabulary_lock,
                 self.audio_generation_signals,
                 passage_title,
-                segment_count,
-                vocabulary_count,
             ),
             daemon=True,
-            name="studybench-gen-audio",
+            name="studybench-vocabulary-audio",
         )
         thread.start()
 
-    def _gen_audio_finished(self, passage_dir, message):
-        self.audio_generation_running = False
-        self._set_gen_audio_enabled(True)
+    def _audio_generation_finished(self, passage_dir, job_kind, message):
+        self.audio_job_running = False
 
-        if self._same_path(self.current_passage_dir, passage_dir):
+        if (
+            job_kind == VOCABULARY_AUDIO_JOB
+            and self._same_path(self.current_passage_dir, passage_dir)
+        ):
+            # Reload the persisted result. This also handles a passage switch
+            # away and back while a background audio job was running.
             self.refresh_vocabulary()
 
+        self._set_audio_job_buttons_enabled(True)
         self.show_status(message)
+
+    def _set_audio_job_buttons_enabled(self, enabled):
+        passage_audio_available = False
+        if self.current_payload is not None:
+            passage_audio_available = self.current_payload.get("article_family") == "article"
+        self._set_gen_audio_enabled(bool(enabled) and passage_audio_available)
+        self.vocabulary_panel.set_audio_generation_enabled(bool(enabled))
 
     def _set_gen_audio_enabled(self, enabled):
         if not self.page_loaded:
@@ -729,13 +820,19 @@ class MainWindow(QMainWindow):
         except OSError:
             return str(first) == str(second)
 
-    def play_vocabulary_audio(self, word, accent):
+    def play_vocabulary_audio(self, word, accent, audio_path):
         if not self.current_passage_dir:
             return
         try:
-            path = self.english_data.get_vocabulary_audio_path(
-                self.current_passage_dir, word, accent
-            )
+            with self.vocabulary_lock:
+                cell = self.current_vocabulary.find(word)
+                if cell is None:
+                    raise ValueError(f"找不到 Vocabulary word：{word}")
+                relative = cell.audio_path(str(accent))
+            if audio_path and str(audio_path) != relative:
+                # The model is authoritative if a stale UI signal arrives.
+                audio_path = relative
+            path = Path(self.current_passage_dir) / relative
             self.audio_player.play_single(path, f"word:{accent}:{word}")
         except Exception as error:
             self.show_status(str(error))
@@ -749,26 +846,24 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            result = self.english_data.move_word(
-                self.current_passage_dir,
-                word_text,
-                str(direction),
-            )
-            if not result.get("ok"):
-                message = result.get("message", "移动 Vocabulary 失败。")
-                self.show_status(message)
-                return
-
-            moved_word = str(result.get("word", word_text))
-            old_index = int(result.get("old_index", 0)) + 1
-            new_index = int(result.get("new_index", 0)) + 1
-            self.refresh_vocabulary()
+            with self.vocabulary_lock:
+                result = self.current_vocabulary.move_word(word_text, str(direction))
+                if result is None:
+                    self.show_status(f"找不到 Vocabulary word：{word_text}")
+                    return
+                old_index, new_index, changed = result
+                if not changed:
+                    self.show_status("Vocabulary word 已经位于可移动边界。")
+                    return
+                VocabularyIO.save(self.current_vocabulary, self._vocabulary_path())
+            self._refresh_vocabulary_view()
             write_log(
                 self.current_passage_dir,
                 "INFO",
-                f"Vocabulary moved {direction}: {moved_word} ({old_index} -> {new_index})",
+                f"Vocabulary moved {direction}: {word_text} ({old_index + 1} -> {new_index + 1})",
             )
         except Exception as error:
+            self.refresh_vocabulary()
             message = f"移动 Vocabulary 失败：{error}"
             write_log(self.current_passage_dir, "ERROR", message)
             self.show_status(message)
@@ -781,6 +876,7 @@ class MainWindow(QMainWindow):
         if not word_text:
             return
 
+
         vocabulary_owners = (
             f"word:uk:{word_text}",
             f"word:us:{word_text}",
@@ -789,17 +885,15 @@ class MainWindow(QMainWindow):
             self.audio_player.stop()
 
         try:
-            result = self.english_data.remove_word(
-                self.current_passage_dir,
-                word_text,
-            )
-            if not result.get("ok"):
-                self.show_status(result.get("message", "删除 Vocabulary 失败。"))
-                return
-
-            deleted_word = str(result.get("word", word_text))
-            remaining_count = int(result.get("remaining_count", 0))
-            self.refresh_vocabulary()
+            with self.vocabulary_lock:
+                deleted = self.current_vocabulary.remove_word(word_text)
+                if deleted is None:
+                    self.show_status(f"找不到 Vocabulary word：{word_text}")
+                    return
+                remaining_count = len(self.current_vocabulary)
+                VocabularyIO.save(self.current_vocabulary, self._vocabulary_path())
+            self._refresh_vocabulary_view()
+            deleted_word = deleted.word.word
             write_log(
                 self.current_passage_dir,
                 "INFO",
@@ -812,6 +906,7 @@ class MainWindow(QMainWindow):
             )
             self.show_status(f"已删除 Vocabulary：{deleted_word}")
         except Exception as error:
+            self.refresh_vocabulary()
             message = f"删除 Vocabulary 失败：{error}"
             write_log(self.current_passage_dir, "ERROR", message)
             self.show_status(message)
@@ -831,9 +926,8 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            self.english_data.export_vocabulary(
-                self.current_passage_dir, path
-            )
+            with self.vocabulary_lock:
+                VocabularyIO.save(self.current_vocabulary, path)
             self.show_status(f"已导出词汇表：{path}")
         except Exception as error:
             message = f"导出失败：{error}"
@@ -854,11 +948,12 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            self.english_data.import_vocabulary(
-                self.current_passage_dir, path
-            )
-            self.refresh_vocabulary()
-            count = len(self.current_words)
+            incoming = VocabularyIO.load(path)
+            with self.vocabulary_lock:
+                self.current_vocabulary.replace_all(incoming.cells)
+                VocabularyIO.save(self.current_vocabulary, self._vocabulary_path())
+                count = len(self.current_vocabulary)
+            self._refresh_vocabulary_view()
             write_log(
                 self.current_passage_dir,
                 "INFO",
@@ -866,6 +961,7 @@ class MainWindow(QMainWindow):
             )
             self.show_status("Vocabulary 导入成功，已整体替换。")
         except Exception as error:
+            self.refresh_vocabulary()
             message = f"导入失败：{error}"
             write_log(self.current_passage_dir, "ERROR", message)
             self.show_status(message)
@@ -873,23 +969,32 @@ class MainWindow(QMainWindow):
     def _current_segment_count(self):
         if self.current_payload is None:
             return 0
+        passage = self.current_payload.get("passage", {})
         total = 0
-        paragraphs = self.current_payload.get("paragraphs", [])
-        for paragraph in paragraphs:
-            segments = paragraph.get("segments", [])
-            total += len(segments)
+        for paragraph in passage.get("paragraphs", []):
+            total += len(paragraph.get("segments", []))
         return total
 
     def _log_passage_opened(self):
         if not self.current_passage_dir or self.current_payload is None:
             return
-        title = self.current_payload.get("title", "Current Passage")
-        exercise_count = len(self.current_payload.get("questions", []))
+        passage = self.current_payload.get("passage", {})
+        title = passage.get("title", "Current Passage")
+        exercise = self.current_payload.get("exercise")
+        exercise_count = 0
+        if isinstance(exercise, dict):
+            if isinstance(exercise.get("questions"), list):
+                exercise_count = len(exercise["questions"])
+            elif isinstance(exercise.get("items"), list):
+                exercise_count = len(exercise["items"])
         write_log(self.current_passage_dir, "INFO", "Passage opened")
         write_log(self.current_passage_dir, "INFO", f"Title: {title}")
         write_log(self.current_passage_dir, "INFO", f"Path: {self.current_passage_dir}")
+        write_log(self.current_passage_dir, "INFO", f"Article family: {self.current_payload.get('article_family')}")
         write_log(self.current_passage_dir, "INFO", f"Segments: {self._current_segment_count()}")
-        write_log(self.current_passage_dir, "INFO", f"Vocabulary: {len(self.current_words)}")
+        with self.vocabulary_lock:
+            vocabulary_count = len(self.current_vocabulary)
+        write_log(self.current_passage_dir, "INFO", f"Vocabulary: {vocabulary_count}")
         write_log(self.current_passage_dir, "INFO", f"Exercises: {exercise_count}")
 
     def _audio_player_message(self, message):
@@ -1007,7 +1112,7 @@ class MainWindow(QMainWindow):
                 self._clear_web_passage()
             else:
                 self._render_current_passage()
-            self._update_vocabulary_highlights(self.current_words)
+            self._update_vocabulary_highlights()
         else:
             self.show_status("中央页面加载失败。")
 
@@ -1017,9 +1122,9 @@ class MainWindow(QMainWindow):
 
         payload = json.dumps(self.current_payload, ensure_ascii=False)
         self.web_view.page().runJavaScript(
-            "window.renderPassage(" + payload + ");"
+            "window.renderStudyPage(" + payload + ");"
         )
-        self._set_gen_audio_enabled(not self.audio_generation_running)
+        self._set_audio_job_buttons_enabled(not self.audio_job_running)
         self._set_exercise_save_allowed(self.current_user_available)
 
     def _clear_web_passage(self):
@@ -1031,7 +1136,8 @@ class MainWindow(QMainWindow):
         self.current_book_dir = ""
         self.current_passage_dir = ""
         self.current_payload = None
-        self.current_words = []
+        with self.vocabulary_lock:
+            self.current_vocabulary = Vocabulary()
         self.current_accounts = []
         self.current_user_folder = DEFAULT_USER_FOLDER
         self.current_username = DEFAULT_USERNAME
@@ -1040,7 +1146,7 @@ class MainWindow(QMainWindow):
         self.pending_action_kind = ""
         self.pending_action_value = None
         self.web_bridge.clear_passage()
-        self.vocabulary_panel.set_words([])
+        self.vocabulary_panel.set_rows([])
         self._refresh_account_controls()
         self._clear_web_passage()
 

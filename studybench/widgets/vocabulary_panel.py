@@ -87,11 +87,12 @@ class _VocabularyEntryWidget(QWidget):
 
 
 class VocabularyPanel(QWidget):
-    audio_requested = Signal(str, str)
+    audio_requested = Signal(str, str, str)
     move_requested = Signal(str, str)
     delete_requested = Signal(str)
     export_requested = Signal()
     import_requested = Signal()
+    gen_words_audio_requested = Signal()
     highlight_visibility_changed = Signal(bool)
 
     def __init__(self, parent=None):
@@ -102,6 +103,8 @@ class VocabularyPanel(QWidget):
         outer.setSpacing(8)
 
         self.highlights_visible = False
+        self.audio_generation_enabled = True
+        self.current_word_count = 0
         self.move_up_icon = QIcon(str(ACTION_ICON_DIR / "move_up.svg"))
         self.move_down_icon = QIcon(str(ACTION_ICON_DIR / "move_down.svg"))
         self.delete_icon = QIcon(str(ACTION_ICON_DIR / "delete.svg"))
@@ -115,14 +118,6 @@ class VocabularyPanel(QWidget):
         title.setFont(title_font)
         header.addWidget(title)
         header.addStretch(1)
-
-        self.highlight_button = QPushButton("show")
-        highlight_font = self.highlight_button.font()
-        highlight_font.setPointSize(10)
-        highlight_font.setBold(False)
-        self.highlight_button.setFont(highlight_font)
-        self.highlight_button.setToolTip("show/hide Vocabulary highlights in the Passage")
-        self.highlight_button.clicked.connect(self._toggle_highlights)
 
         self.export_button = QPushButton("导出")
         export_font = self.export_button.font()
@@ -140,18 +135,11 @@ class VocabularyPanel(QWidget):
         self.import_button.clicked.connect(self.import_requested.emit)
 
         header_button_width = 54
-        required_width = self.highlight_button.fontMetrics().horizontalAdvance("show") + 16
-        if required_width > header_button_width:
-            header_button_width = required_width
-        self.highlight_button.setFixedWidth(header_button_width)
         self.export_button.setFixedWidth(header_button_width)
         self.import_button.setFixedWidth(header_button_width)
-        self.highlight_button.setFixedHeight(SIDEBAR_BUTTON_HEIGHT)
         self.export_button.setFixedHeight(SIDEBAR_BUTTON_HEIGHT)
         self.import_button.setFixedHeight(SIDEBAR_BUTTON_HEIGHT)
 
-        header.addWidget(self.highlight_button)
-        header.addSpacing(12)
         header.addWidget(self.export_button)
         header.addWidget(self.import_button)
         outer.addLayout(header)
@@ -175,13 +163,59 @@ class VocabularyPanel(QWidget):
         self.words_layout.addStretch(1)
         self.scroll.setWidget(self.content)
 
-    def set_words(self, words):
+        self.highlight_button = QPushButton("show")
+        highlight_font = self.highlight_button.font()
+        highlight_font.setPointSize(10)
+        highlight_font.setBold(False)
+        self.highlight_button.setFont(highlight_font)
+        self.highlight_button.setToolTip("show/hide Vocabulary highlights in the Passage")
+        self.highlight_button.setFixedHeight(SIDEBAR_BUTTON_HEIGHT)
+        self.highlight_button.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed
+        )
+        self.highlight_button.clicked.connect(self._toggle_highlights)
+
+        self.gen_words_audio_button = QPushButton("gen words audio")
+        gen_words_audio_font = self.gen_words_audio_button.font()
+        gen_words_audio_font.setPointSize(10)
+        gen_words_audio_font.setBold(False)
+        self.gen_words_audio_button.setFont(gen_words_audio_font)
+        self.gen_words_audio_button.setFixedHeight(SIDEBAR_BUTTON_HEIGHT)
+        self.gen_words_audio_button.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed
+        )
+        self.gen_words_audio_button.clicked.connect(
+            self.gen_words_audio_requested.emit
+        )
+
+        footer = QHBoxLayout()
+        footer.setContentsMargins(0, 0, 0, 0)
+        footer.setSpacing(6)
+        footer.addWidget(self.highlight_button, 1)
+        footer.addWidget(self.gen_words_audio_button, 1)
+        outer.addLayout(footer)
+
+        self._refresh_footer_buttons()
+
+    def set_rows(self, rows):
         self._clear_words()
 
-        total_count = len(words)
-        for index, word in enumerate(words):
-            widget = self._make_word_widget(word, index, total_count)
+        self.current_word_count = len(rows)
+        for row in rows:
+            widget = self._make_word_widget(row)
             self.words_layout.insertWidget(self.words_layout.count() - 1, widget)
+        self._refresh_footer_buttons()
+
+    def set_audio_generation_enabled(self, enabled):
+        self.audio_generation_enabled = bool(enabled)
+        self._refresh_footer_buttons()
+
+    def _refresh_footer_buttons(self):
+        has_words = self.current_word_count > 0
+        self.highlight_button.setEnabled(has_words)
+        self.gen_words_audio_button.setEnabled(
+            has_words and self.audio_generation_enabled
+        )
 
     def _clear_words(self):
         while self.words_layout.count() > 1:
@@ -190,14 +224,16 @@ class VocabularyPanel(QWidget):
             if widget is not None:
                 widget.deleteLater()
 
-    def _make_word_widget(self, entry, index, total_count):
+    def _make_word_widget(self, row):
+        cell = row.get("cell", {})
+        word_text = str(cell.get("word_text", ""))
+        render_rows = cell.get("rows", [])
+
         block = _VocabularyEntryWidget()
         block.setObjectName("vocabularyEntry")
         block.setMinimumWidth(0)
         block.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-        background = "#FFFFFF"
-        if index % 2 == 1:
-            background = "#F5F6F2"
+        background = str(row.get("background") or "#FFFFFF")
         block.setStyleSheet(
             "QWidget#vocabularyEntry { background-color: " + background + "; }"
         )
@@ -206,87 +242,18 @@ class VocabularyPanel(QWidget):
         content_layout.setContentsMargins(6, 7, 4, 7)
         content_layout.setSpacing(4)
 
-        word_row = QHBoxLayout()
-        word_row.setContentsMargins(0, 0, 0, 0)
-        word_row.setSpacing(0)
+        meaning_count = 0
+        for render_row in render_rows:
+            row_type = str(render_row.get("type", ""))
+            if row_type == "word":
+                self._add_word_render_row(content_layout, render_row)
+            elif row_type == "phonetics":
+                self._add_phonetics_render_row(content_layout, word_text, render_row)
+            elif row_type == "meaning":
+                self._add_meaning_render_row(content_layout, render_row)
+                meaning_count += 1
 
-        word_label = QLabel(entry.get("word", ""))
-        word_font = word_label.font()
-        word_font.setPointSize(11)
-        word_font.setBold(True)
-        word_label.setFont(word_font)
-        word_label.setStyleSheet("color: #4c8045;")
-        word_label.setWordWrap(True)
-        word_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-        word_row.addWidget(word_label, 1)
-        content_layout.addLayout(word_row)
-
-        phonetic_row = QHBoxLayout()
-        phonetic_row.setContentsMargins(0, 0, 0, 0)
-        phonetic_row.setSpacing(5)
-
-        uk_label = QLabel(entry.get("phonetic_uk") or "—")
-        uk_label_font = uk_label.font()
-        uk_label_font.setPointSize(10)
-        uk_label_font.setBold(False)
-        uk_label.setFont(uk_label_font)
-        uk_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        phonetic_row.addWidget(uk_label)
-
-        uk_button = QToolButton()
-        uk_button_font = uk_button.font()
-        uk_button_font.setPointSize(11)
-        uk_button_font.setBold(False)
-        uk_button.setFont(uk_button_font)
-        uk_button.setText("🔊")
-        uk_button.setToolTip("英/Br")
-        uk_button.setProperty("word", entry.get("word", ""))
-        uk_button.setProperty("accent", "uk")
-        uk_button.setStyleSheet("QToolButton { color: #0077be; border: 0; padding: 1px; }")
-        uk_button.clicked.connect(self._speaker_clicked)
-        phonetic_row.addWidget(uk_button)
-
-        us_label = QLabel(entry.get("phonetic_us") or "—")
-        us_label_font = us_label.font()
-        us_label_font.setPointSize(10)
-        us_label_font.setBold(False)
-        us_label.setFont(us_label_font)
-        us_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        phonetic_row.addWidget(us_label)
-
-        us_button = QToolButton()
-        us_button_font = us_button.font()
-        us_button_font.setPointSize(11)
-        us_button_font.setBold(False)
-        us_button.setFont(us_button_font)
-        us_button.setText("🔊")
-        us_button.setToolTip("美/Am")
-        us_button.setProperty("word", entry.get("word", ""))
-        us_button.setProperty("accent", "us")
-        us_button.setStyleSheet("QToolButton { color: #c62828; border: 0; padding: 1px; }")
-        us_button.clicked.connect(self._speaker_clicked)
-        phonetic_row.addWidget(us_button)
-        phonetic_row.addStretch(1)
-        content_layout.addLayout(phonetic_row)
-
-        meanings = entry.get("meanings", [])
-        if meanings:
-            for meaning in meanings:
-                pos = html.escape(str(meaning.get("pos", "")))
-                text = html.escape(str(meaning.get("meaning", "")))
-                label = QLabel(
-                    "<p style='margin:0; padding-left:2em; text-indent:-2em;'>"
-                    f"<b>{pos}</b>&nbsp;&nbsp;{text}</p>"
-                )
-                meaning_font = label.font()
-                meaning_font.setPointSize(10)
-                meaning_font.setBold(False)
-                label.setFont(meaning_font)
-                label.setWordWrap(True)
-                label.setTextFormat(Qt.TextFormat.RichText)
-                label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
-                content_layout.addWidget(label)
-        else:
+        if meaning_count == 0:
             label = QLabel("尚未补充词性和含义")
             empty_meaning_font = label.font()
             empty_meaning_font.setPointSize(10)
@@ -303,14 +270,13 @@ class VocabularyPanel(QWidget):
         action_layout.setContentsMargins(0, 0, 0, 0)
         action_layout.setSpacing(ACTION_BUTTON_GAP)
 
-        word = entry.get("word", "")
         up_button = self._make_move_button(
-            self.move_up_icon, word, "up", index > 0
+            self.move_up_icon, word_text, "up", bool(row.get("can_move_up"))
         )
         down_button = self._make_move_button(
-            self.move_down_icon, word, "down", index < total_count - 1
+            self.move_down_icon, word_text, "down", bool(row.get("can_move_down"))
         )
-        delete_button = self._make_delete_button(word)
+        delete_button = self._make_delete_button(word_text)
 
         action_layout.addWidget(up_button, 0, Qt.AlignmentFlag.AlignVCenter)
         action_layout.addWidget(down_button, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -318,6 +284,82 @@ class VocabularyPanel(QWidget):
         block.set_action_overlay(action_overlay)
 
         return block
+
+    @staticmethod
+    def _add_word_render_row(content_layout, render_row):
+        word_row = QHBoxLayout()
+        word_row.setContentsMargins(0, 0, 0, 0)
+        word_row.setSpacing(0)
+
+        word_label = QLabel(str(render_row.get("text", "")))
+        word_font = word_label.font()
+        word_font.setPointSize(11)
+        word_font.setBold(bool(render_row.get("bold", True)))
+        word_label.setFont(word_font)
+        word_color = str(render_row.get("color") or "#3271ae")
+        word_label.setStyleSheet("color: " + word_color + ";")
+        word_label.setWordWrap(True)
+        word_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        word_row.addWidget(word_label, 1)
+        content_layout.addLayout(word_row)
+
+    def _add_phonetics_render_row(self, content_layout, word_text, render_row):
+        phonetic_row = QHBoxLayout()
+        phonetic_row.setContentsMargins(0, 0, 0, 0)
+        phonetic_row.setSpacing(5)
+
+        items = {
+            str(item.get("accent", "")): item
+            for item in render_row.get("items", [])
+            if isinstance(item, dict)
+        }
+        self._add_phonetic_item(phonetic_row, word_text, "uk", items.get("uk", {}))
+        self._add_phonetic_item(phonetic_row, word_text, "us", items.get("us", {}))
+        phonetic_row.addStretch(1)
+        content_layout.addLayout(phonetic_row)
+
+    def _add_phonetic_item(self, layout, word_text, accent, item):
+        label = QLabel(str(item.get("text") or "—"))
+        label_font = label.font()
+        label_font.setPointSize(10)
+        label_font.setBold(False)
+        label.setFont(label_font)
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(label)
+
+        button = QToolButton()
+        button_font = button.font()
+        button_font.setPointSize(11)
+        button_font.setBold(False)
+        button.setFont(button_font)
+        button.setText("🔊")
+        button.setToolTip("英/Br" if accent == "uk" else "美/Am")
+        button.setProperty("word", word_text)
+        button.setProperty("accent", accent)
+        button.setProperty("audio_path", str(item.get("audio_path") or ""))
+        color = "#0077be" if accent == "uk" else "#c62828"
+        button.setStyleSheet(
+            "QToolButton { color: " + color + "; border: 0; padding: 1px; }"
+        )
+        button.clicked.connect(self._speaker_clicked)
+        layout.addWidget(button)
+
+    @staticmethod
+    def _add_meaning_render_row(content_layout, render_row):
+        pos = html.escape(str(render_row.get("pos", "")))
+        text = html.escape(str(render_row.get("meaning", "")))
+        label = QLabel(
+            "<p style='margin:0; padding-left:2em; text-indent:-2em;'>"
+            f"<b>{pos}</b>&nbsp;&nbsp;{text}</p>"
+        )
+        meaning_font = label.font()
+        meaning_font.setPointSize(10)
+        meaning_font.setBold(False)
+        label.setFont(meaning_font)
+        label.setWordWrap(True)
+        label.setTextFormat(Qt.TextFormat.RichText)
+        label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        content_layout.addWidget(label)
 
     def _make_move_button(self, icon, word, direction, enabled):
         button = _VocabularyActionButton(icon)
@@ -358,7 +400,8 @@ class VocabularyPanel(QWidget):
             return
         word = button.property("word")
         accent = button.property("accent")
-        self.audio_requested.emit(str(word), str(accent))
+        audio_path = button.property("audio_path")
+        self.audio_requested.emit(str(word), str(accent), str(audio_path))
 
     def _move_clicked(self):
         button = self.sender()

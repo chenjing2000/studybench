@@ -66,32 +66,49 @@ def read_audio_config(library_root):
     return data
 
 
-def validate_audio_config(config):
+def validate_passage_tts_config(config):
+    if not isinstance(config, dict):
+        raise ValueError("audio_config.json 顶层必须是 JSON object。")
+
+    uk_voice = _required_text(config, "uk_voice")
+    us_voice = _required_text(config, "us_voice")
+    wait_seconds = _required_wait_seconds(config)
+
+    return {
+        "uk_voice": uk_voice,
+        "us_voice": us_voice,
+        "wait_seconds": wait_seconds,
+    }
+
+
+def validate_vocabulary_audio_config(config):
     if not isinstance(config, dict):
         raise ValueError("audio_config.json 顶层必须是 JSON object。")
 
     mdx_path = _required_path(config, "mdx_path", ".mdx", "MDX")
     mdd_path = _required_path(config, "mdd_path", ".mdd", "MDD")
-    uk_voice = _required_text(config, "uk_voice")
-    us_voice = _required_text(config, "us_voice")
-
-    wait_seconds = config.get("wait_seconds")
-    if isinstance(wait_seconds, bool) or not isinstance(wait_seconds, (int, float)):
-        raise ValueError("audio_config.json：wait_seconds 必须是大于等于 0 的数字。")
-    if wait_seconds < 0:
-        raise ValueError("audio_config.json：wait_seconds 必须是大于等于 0 的数字。")
+    tts = validate_passage_tts_config(config)
 
     return {
         "mdx_path": str(mdx_path),
         "mdd_path": str(mdd_path),
-        "uk_voice": uk_voice,
-        "us_voice": us_voice,
-        "wait_seconds": float(wait_seconds),
+        "uk_voice": tts["uk_voice"],
+        "us_voice": tts["us_voice"],
+        "wait_seconds": tts["wait_seconds"],
     }
 
 
-def load_audio_config_for_run(library_root):
-    path, created = ensure_audio_config(library_root)
+def load_passage_tts_config_for_run(library_root):
+    ensure_audio_config(library_root)
+    try:
+        config = read_audio_config(library_root)
+    except Exception as error:
+        raise ValueError(f"audio_config.json 格式错误：{error}") from None
+    return validate_passage_tts_config(config)
+
+
+def load_vocabulary_audio_config_for_run(library_root):
+    _, created = ensure_audio_config(library_root)
     if created:
         raise ValueError(
             "已创建 audio_config.json，请先填写 mdx_path 与 mdd_path。"
@@ -102,11 +119,11 @@ def load_audio_config_for_run(library_root):
     except Exception as error:
         raise ValueError(f"audio_config.json 格式错误：{error}") from None
 
-    return validate_audio_config(config)
+    return validate_vocabulary_audio_config(config)
 
 
 def inspect_audio_config(library_root):
-    """Create/read config during Library loading without blocking other features.
+    """Create/read config during Library loading without blocking Passage TTS.
 
     Returns one ordinary status-bar message or an empty string.
     """
@@ -117,15 +134,24 @@ def inspect_audio_config(library_root):
         return f"无法创建 audio_config.json：{error}"
 
     if created:
-        return "已创建 audio_config.json，请填写 mdx_path 与 mdd_path。"
+        return "已创建 audio_config.json。生成词汇音频前请填写 mdx_path 与 mdd_path。"
 
     try:
         config = read_audio_config(library_root)
-        validate_audio_config(config)
+        validate_passage_tts_config(config)
     except Exception as error:
         return str(error)
 
     return ""
+
+
+def _required_wait_seconds(config):
+    wait_seconds = config.get("wait_seconds")
+    if isinstance(wait_seconds, bool) or not isinstance(wait_seconds, (int, float)):
+        raise ValueError("audio_config.json：wait_seconds 必须是大于等于 0 的数字。")
+    if wait_seconds < 0:
+        raise ValueError("audio_config.json：wait_seconds 必须是大于等于 0 的数字。")
+    return float(wait_seconds)
 
 
 def _required_text(config, field_name):
