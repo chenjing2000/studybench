@@ -8,6 +8,10 @@ let exerciseDirty = false;
 let exerciseSaveAllowed = true;
 let exerciseSaveTimer = null;
 let currentAnswerNumbers = [];
+let exerciseHintsVisible = false;
+let exerciseRefAnswersVisible = false;
+let exerciseActionsComponent = null;
+let exerciseActionButtons = {};
 
 const addButton = document.getElementById("selectionAddButton");
 const passageTextElement = document.getElementById("passageText");
@@ -19,11 +23,12 @@ new QWebChannel(qt.webChannelTransport, function (channel) {
 });
 
 window.renderStudyView = function (viewModel) {
-  currentAccent = "uk";
+  currentAccent = viewModel && viewModel.default_accent === "us" ? "us" : "uk";
   hideSelectionButton();
   clearTimeout(exerciseSaveTimer);
   exerciseSaveTimer = null;
   currentAnswerNumbers = [];
+  resetExerciseActionState();
   setExerciseDirty(false, false);
 
   document.getElementById("emptyState").classList.add("hidden");
@@ -38,6 +43,7 @@ window.renderStudyView = function (viewModel) {
     ? viewModel.components
     : [];
   components.forEach(renderTopLevelComponent);
+  refreshExerciseActions();
   applyVocabularyHighlights();
   updateExerciseInputState();
 };
@@ -48,6 +54,7 @@ window.clearStudyView = function () {
   clearTimeout(exerciseSaveTimer);
   exerciseSaveTimer = null;
   currentAnswerNumbers = [];
+  resetExerciseActionState();
   setExerciseDirty(false, false);
   document.getElementById("passageTitle").textContent = "";
   passageTextElement.replaceChildren();
@@ -66,6 +73,12 @@ window.setVocabularyWords = function (words, visible) {
 window.setVocabularyHighlightsVisible = function (visible) {
   vocabularyHighlightsVisible = Boolean(visible);
   applyVocabularyHighlights();
+};
+
+window.setPassageAccent = function (accent) {
+  currentAccent = accent === "us" ? "us" : "uk";
+  const button = document.getElementById("accentButton");
+  if (button) button.textContent = currentAccent === "uk" ? "British" : "American";
 };
 
 window.setGenAudioEnabled = function (enabled) {
@@ -232,6 +245,7 @@ function renderComponent(component) {
   if (type === "radio_group") return renderRadioGroup(component);
   if (type === "textbox") return renderTextbox(component);
   if (type === "option_pool") return renderOptionPool(component);
+  if (type === "exercise_actions") return renderExerciseActions(component);
   return null;
 }
 
@@ -315,6 +329,231 @@ function renderOptionPool(component) {
   return pool;
 }
 
+function renderExerciseActions(component) {
+  exerciseActionsComponent = component;
+  exerciseHintsVisible = false;
+  exerciseRefAnswersVisible = false;
+  exerciseActionButtons = {};
+
+  const ui = component.ui || {};
+  const row = document.createElement("div");
+  row.className = "exercise-actions";
+  row.style.display = "flex";
+  row.style.justifyContent = ui.alignment === "center" ? "center" : "flex-start";
+  row.style.alignItems = "center";
+  row.style.gap = String(Number(ui.gap_px) || 15) + "px";
+  row.style.marginTop = String(Number(ui.row_margin_top_px) || 10) + "px";
+  row.style.width = "100%";
+
+  (Array.isArray(component.buttons) ? component.buttons : []).forEach(function (definition) {
+    const actionName = String(definition.action || "");
+    if (!actionName) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "exercise-action-button";
+    button.textContent = String(definition.text || actionName);
+    button.dataset.action = actionName;
+    button.style.width = String(Number(ui.button_width_px) || 70) + "px";
+    button.style.height = String(Number(ui.button_height_px) || 30) + "px";
+    button.style.boxSizing = "border-box";
+    button.style.border = String(ui.button_border || "1px solid #9a9a9a");
+    button.style.borderRadius = String(Number(ui.button_border_radius_px) || 4) + "px";
+    button.style.background = String(ui.button_background || "#ffffff");
+    button.style.color = String(ui.button_text_color || "#4c8045");
+    button.style.fontFamily = "inherit";
+    button.style.fontSize = String(Number(ui.button_font_size_pt) || 10) + "pt";
+    button.style.fontWeight = String(ui.button_font_weight || "700");
+    button.style.cursor = "pointer";
+    button.addEventListener("click", function () {
+      handleExerciseAction(actionName);
+    });
+    exerciseActionButtons[actionName] = button;
+    row.appendChild(button);
+  });
+  updateExerciseActionButtonStates();
+  return row;
+}
+
+function resetExerciseActionState() {
+  exerciseHintsVisible = false;
+  exerciseRefAnswersVisible = false;
+  exerciseActionsComponent = null;
+  exerciseActionButtons = {};
+}
+
+function handleExerciseAction(actionName) {
+  if (!exerciseActionsComponent) return;
+  const actions = exerciseActionsComponent.actions || {};
+  const action = actions[actionName] || {};
+
+  if (actionName === "hints") {
+    if (action.mode === "none") return;
+    exerciseHintsVisible = !exerciseHintsVisible;
+    refreshExerciseActions();
+    return;
+  }
+
+  if (actionName === "ref_ans") {
+    if (action.mode === "none") return;
+    exerciseRefAnswersVisible = !exerciseRefAnswersVisible;
+    refreshExerciseActions();
+    return;
+  }
+
+  if (actionName === "reset") {
+    resetExerciseAnswers(action);
+  }
+}
+
+function getExerciseAnswer(number) {
+  const checked = document.querySelector('input[type="radio"][name="answer-' + number + '"]:checked');
+  if (checked) return String(checked.value || "");
+  const input = document.querySelector('.exercise-textbox[data-number="' + number + '"]');
+  return input ? String(input.value || "") : "";
+}
+
+function exerciseItemIsAnswered(number) {
+  return getExerciseAnswer(number).trim() !== "";
+}
+
+function findExerciseQuestion(number) {
+  return document.querySelector('#exerciseSection .question[data-number="' + number + '"]');
+}
+
+function findExerciseRadio(number, value) {
+  const radios = document.querySelectorAll('input[type="radio"][name="answer-' + number + '"]');
+  for (const radio of radios) {
+    if (String(radio.value || "") === String(value || "")) return radio;
+  }
+  return null;
+}
+
+function clearHintFormatting() {
+  document.querySelectorAll('#exerciseSection .option-text[data-exercise-hint-marked="1"]').forEach(function (text) {
+    text.style.color = "";
+    delete text.dataset.exerciseHintMarked;
+  });
+}
+
+function clearExerciseFeedback() {
+  document.querySelectorAll('#exerciseSection .exercise-feedback[data-exercise-feedback="1"]').forEach(function (node) {
+    node.remove();
+  });
+}
+
+function applyExerciseHints(action) {
+  if (!action || action.mode !== "mark_wrong_selection") return;
+  const color = String(action.incorrect_color || "#c8161d");
+  (Array.isArray(action.items) ? action.items : []).forEach(function (item) {
+    const number = Number(item.number);
+    const answer = getExerciseAnswer(number).trim();
+    if (!answer || answer === String(item.reference_answer || "")) return;
+    const radio = findExerciseRadio(number, answer);
+    if (!radio) return;
+    const row = radio.closest("label");
+    const text = row ? row.querySelector(".option-text") : null;
+    if (!text) return;
+    text.style.color = color;
+    text.dataset.exerciseHintMarked = "1";
+  });
+}
+
+function appendReferenceFeedback(item) {
+  const number = Number(item.number);
+  if (!exerciseItemIsAnswered(number)) return;
+  const question = findExerciseQuestion(number);
+  if (!question) return;
+
+  const ui = (exerciseActionsComponent && exerciseActionsComponent.ui) || {};
+  const feedback = document.createElement("div");
+  feedback.className = "exercise-feedback";
+  feedback.dataset.exerciseFeedback = "1";
+  feedback.style.flexBasis = "100%";
+  feedback.style.width = "100%";
+  feedback.style.boxSizing = "border-box";
+  feedback.style.marginTop = String(Number(ui.feedback_margin_top_px) || 8) + "px";
+  feedback.style.display = "grid";
+  feedback.style.gap = String(Number(ui.feedback_line_gap_px) || 4) + "px";
+  feedback.style.fontSize = String(Number(ui.feedback_font_size_pt) || 11) + "pt";
+  feedback.style.lineHeight = "1.5";
+
+  const reference = document.createElement("div");
+  reference.className = "exercise-reference-answer";
+  reference.style.fontWeight = String(ui.reference_font_weight || "600");
+  reference.textContent = "Reference answer: " + String(item.display_answer || item.reference_answer || "");
+  feedback.appendChild(reference);
+
+  const explanationText = String(item.explanation || "").trim();
+  if (explanationText) {
+    const explanation = document.createElement("div");
+    explanation.className = "exercise-explanation";
+    explanation.style.color = String(ui.explanation_color || "#555555");
+    explanation.textContent = "Explanation: " + explanationText;
+    feedback.appendChild(explanation);
+  }
+  question.appendChild(feedback);
+}
+
+function applyReferenceAnswers(action) {
+  if (!action || action.mode !== "show_reference") return;
+  (Array.isArray(action.items) ? action.items : []).forEach(appendReferenceFeedback);
+}
+
+function updateExerciseActionButtonStates() {
+  if (!exerciseActionsComponent) return;
+  const ui = exerciseActionsComponent.ui || {};
+  const activeBackground = String(ui.active_background || "#e8eef6");
+  const normalBackground = String(ui.button_background || "#ffffff");
+  const actions = exerciseActionsComponent.actions || {};
+
+  Object.keys(exerciseActionButtons).forEach(function (name) {
+    const button = exerciseActionButtons[name];
+    const action = actions[name] || {};
+    const active = (name === "hints" && exerciseHintsVisible) ||
+      (name === "ref_ans" && exerciseRefAnswersVisible);
+    button.style.background = active ? activeBackground : normalBackground;
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    if (name === "reset") button.disabled = !exerciseSaveAllowed;
+    if (action.mode === "none") button.setAttribute("aria-pressed", "false");
+  });
+}
+
+function refreshExerciseActions() {
+  clearHintFormatting();
+  clearExerciseFeedback();
+  if (!exerciseActionsComponent) return;
+  const actions = exerciseActionsComponent.actions || {};
+  if (exerciseHintsVisible) applyExerciseHints(actions.hints || {});
+  if (exerciseRefAnswersVisible) applyReferenceAnswers(actions.ref_ans || {});
+  updateExerciseActionButtonStates();
+}
+
+function resetExerciseAnswers(action) {
+  const numbers = Array.isArray(action && action.numbers) ? action.numbers : currentAnswerNumbers;
+  let changed = false;
+  numbers.forEach(function (rawNumber) {
+    const number = Number(rawNumber);
+    document.querySelectorAll('input[type="radio"][name="answer-' + number + '"]').forEach(function (radio) {
+      if (radio.checked) changed = true;
+      radio.checked = false;
+    });
+    const input = document.querySelector('.exercise-textbox[data-number="' + number + '"]');
+    if (input) {
+      if (input.value !== "") changed = true;
+      input.value = "";
+      if (input.tagName === "TEXTAREA") autoGrow(input);
+    }
+  });
+
+  exerciseHintsVisible = false;
+  exerciseRefAnswersVisible = false;
+  refreshExerciseActions();
+  if (changed) {
+    setExerciseDirty(true, true);
+    scheduleAutoSave();
+  }
+}
+
 function renderPassageControls() {
   passageControlsElement.replaceChildren();
   passageControlsElement.classList.remove("hidden");
@@ -329,9 +568,10 @@ function renderPassageControls() {
   });
 
   const accentButton = document.createElement("button");
+  accentButton.id = "accentButton";
   accentButton.type = "button";
   accentButton.className = "accent-button";
-  accentButton.textContent = "British";
+  accentButton.textContent = currentAccent === "uk" ? "British" : "American";
   accentButton.title = "Switch British / American pronunciation";
   accentButton.addEventListener("click", function () {
     currentAccent = currentAccent === "uk" ? "us" : "uk";
@@ -369,6 +609,7 @@ function collectExerciseAnswers() {
 
 function answerChanged() {
   setExerciseDirty(true, true);
+  refreshExerciseActions();
   scheduleAutoSave();
 }
 
@@ -387,6 +628,7 @@ function updateExerciseInputState() {
   document.querySelectorAll("#exerciseSection input, #exerciseSection textarea").forEach(function (control) {
     control.disabled = !exerciseSaveAllowed;
   });
+  updateExerciseActionButtonStates();
 }
 
 function autoGrow(textarea) {

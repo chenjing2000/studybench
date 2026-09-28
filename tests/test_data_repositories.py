@@ -147,3 +147,43 @@ def test_empty_book_is_rejected(repos):
     books, warnings = library.load_library(root)
     assert books == []
     assert warnings
+
+
+def test_normal_userdata_references_do_not_rewrite_book_json(repos, monkeypatch):
+    root, _article, library, users = repos
+    book_dir = root / "english_reading"
+    writes = []
+
+    def unexpected_write(*args, **kwargs):
+        writes.append((args, kwargs))
+
+    monkeypatch.setattr(
+        "studybench.data.library_repository.write_json_atomic",
+        unexpected_write,
+    )
+
+    references, warnings = library.user_references(
+        book_dir, users.validate_user_folder_reference
+    )
+
+    assert references == [DEFAULT_USER_FOLDER]
+    assert warnings == []
+    assert writes == []
+
+
+def test_userdata_reference_cleanup_still_rewrites_when_normalization_is_needed(repos):
+    root, _article, library, users = repos
+    book_dir = root / "english_reading"
+    book_path = book_dir / "book.json"
+    book = json.loads(book_path.read_text(encoding="utf-8"))
+    book["userdata"] = [DEFAULT_USER_FOLDER, "extra_user", "extra_user"]
+    write_json(book_path, book)
+
+    references, warnings = library.user_references(
+        book_dir, users.validate_user_folder_reference
+    )
+
+    assert references == [DEFAULT_USER_FOLDER, "extra_user"]
+    assert warnings == ["《English Reading》：忽略重复用户目录引用 extra_user。"]
+    saved = json.loads(book_path.read_text(encoding="utf-8"))
+    assert saved["userdata"] == references

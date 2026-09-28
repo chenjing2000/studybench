@@ -1,15 +1,13 @@
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
-from ...json_store import read_json, write_json_atomic
-
 
 class WindowStateManager:
     """Own Qt window geometry/splitter persistence for the application shell."""
 
-    def __init__(self, settings_path):
-        self.settings_path = settings_path
-        self.settings = self._load()
+    def __init__(self, settings_repository):
+        self.settings_repository = settings_repository
+        self.settings = self.settings_repository.load()
         self._restore_left_width = None
         self._restore_right_width = None
 
@@ -58,33 +56,28 @@ class WindowStateManager:
         sizes = splitter.sizes()
         left_width = sizes[0] if len(sizes) >= 1 else int(normal.width() * 0.20)
         right_width = sizes[2] if len(sizes) >= 3 else int(normal.width() * 0.25)
-        data = {
-            "screen": {
+        self.settings = self.settings_repository.save_window_state(
+            screen={
                 "width": int(available.width()),
                 "height": int(available.height()),
             },
-            "window": {
+            window={
                 "x": int(normal.x()),
                 "y": int(normal.y()),
                 "width": int(normal.width()),
                 "height": int(normal.height()),
                 "maximized": bool(window.isMaximized()),
             },
-            "layout": {
+            layout={
                 "left_width": int(left_width),
                 "right_width": int(right_width),
             },
-            "last_library_dir": str(last_library_dir or ""),
-        }
-        write_json_atomic(self.settings_path, data)
-        self.settings = data
+            last_library_dir=last_library_dir,
+        )
 
-    def _load(self):
-        try:
-            data = read_json(self.settings_path, allow_missing=True, default={})
-            return data if isinstance(data, dict) else {}
-        except Exception:
-            return {}
+    def reload_settings(self):
+        self.settings = self.settings_repository.load()
+        return self.settings
 
     def _apply_splitter_sizes(self, splitter):
         total = max(splitter.width(), 600)
@@ -119,7 +112,12 @@ class WindowStateManager:
             max(400, int(available.width() * 0.50)),
             max(300, int(available.height() * 0.50)),
         )
-        window.setMaximumSize(available.width(), available.height())
+        # Do not impose a finite maximumSize on the main window.  On Windows,
+        # Qt maps a finite maximum size into native sizing constraints and the
+        # title-bar maximize button can become disabled even when the
+        # WindowMaximizeButtonHint is present.  Native maximization already
+        # uses the current screen work area (availableGeometry), excluding the
+        # taskbar, so leave the upper bound to the window manager.
 
     @staticmethod
     def _valid_saved_geometry(saved_window, available):

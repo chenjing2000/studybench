@@ -21,20 +21,29 @@ uv run python main.py
 uv run pytest
 ```
 
-## V0.10.0 architecture
+## V0.12.7 architecture
 
-V0.10.0 completes the Data/Application cleanup begun in V0.8/V0.9. The former `EnglishData` compatibility object is gone. Persistent resources now have explicit owners, application state is private/read-only from the outside, Passage/Library switching is prepared before it is committed, and UI code no longer reaches into Application locks or mutable Vocabulary state.
+V0.12.7 is a cleanup release on top of the V0.12 architecture. It aligns the bundled Passage-generation Skills with the current `Article` / `ArticleBlank` and five `article_*` Exercise schemas, removes confirmed dead APIs/imports, and stops `LibraryRepository` from rewriting an already-normal `book.json` merely while reading user references. The native main-window maximize behavior from V0.12.6 is retained.
 
 ```text
 studybench/
 ├── data/
 │   ├── article_repository.py
 │   ├── library_repository.py
-│   └── user_data_repository.py
+│   ├── user_data_repository.py
+│   └── app_settings_repository.py
 ├── article_classes/
 │   ├── factory.py
 │   ├── base_article_classes/
 │   └── extended_article_classes/
+│       ├── exercise_components/
+│       │   ├── exercise_components_ui.py
+│       │   ├── article_answer_components.py
+│       │   ├── article_choice_components.py
+│       │   ├── article_cloze_components.py
+│       │   ├── article_cloze_sentences_components.py
+│       │   └── article_cloze_words_components.py
+│       └── ui/
 ├── vocabulary/
 │   ├── word.py
 │   ├── word_cell.py
@@ -51,6 +60,7 @@ studybench/
 │   │   ├── account_application.py
 │   │   ├── article_application.py
 │   │   ├── vocabulary_application.py
+│   │   ├── settings_application.py
 │   │   ├── ports.py
 │   │   └── workspace_coordinator.py
 │   ├── audio_generator/
@@ -62,6 +72,8 @@ studybench/
 │       ├── audio_playback.py
 │       ├── audio_task_runner.py
 │       ├── window_state.py
+│       ├── settings_dialog.py
+│       ├── settings_pages/
 │       ├── main_window_ui.py
 │       ├── left_panel.py
 │       ├── center_panel.py
@@ -77,21 +89,44 @@ Each persistent resource has one authoritative owner:
 - `passage.json` / `exercise.json` → `ArticleRepository`
 - `userdata/<user>/answer_sheet.json` → `UserDataRepository`
 - `vocabulary.json` → `VocabularyIO`
-- `audio_config.json` → `program/audio_generator/config.py`
+- root `audio_config.json` → `program/audio_generator/config.py`
+- root `settings.json` → `AppSettingsRepository` (window state + playback preference)
 - generated MP3 files → the Audio Generator
-- window settings → `program/ui/window_state.py`
 
 `ArticleRepository` reads Article files and passes already-loaded data to the pure Article factory. Article domain classes do not read JSON themselves and do not build UI payloads. `LibraryRepository` reads only the Passage summary needed for navigation, so a malformed `exercise.json` does not hide the Book from the left tree; the full Article is validated when that Passage is opened.
 
 ### State and transaction boundaries
 
-The four Application objects are the unique owners of their current state. Their internal current values are private and exposed read-only or as snapshots. `VocabularyApplication.snapshot()` returns a detached Vocabulary, so UI presentation never holds the Application lock or mutates the live Vocabulary. Vocabulary audio jobs use a monotonic revision to avoid merging stale results over newer user edits.
+Application objects are the unique owners of their current state. Their internal current values are private and exposed read-only or as snapshots. `VocabularyApplication.snapshot()` returns a detached Vocabulary, so UI presentation never holds the Application lock or mutates the live Vocabulary. Vocabulary audio jobs use a monotonic revision to avoid merging stale results over newer user edits.
 
 Workspace switching follows a prepare-then-commit rule. A corrupt Passage cannot leave the Library pointing at one Passage while Article/Vocabulary still represent another, and a failed Library load does not clear the existing workspace. Cross-Application operations stay in `WorkspaceCoordinator`; single-Application operations do not. `WorkspaceUpdate` carries explicit change flags and typed application messages to the Qt shell.
 
 Qt playback and background execution remain adapters in `program/ui/`. Application code talks to playback through the small `AudioPlaybackPort` protocol and never imports PySide6. `AudioTaskRunner` owns the single audio-generation running state.
 
 The bundled demonstration Library is `example_library_english/` at the project root. It is data, not a Python package.
+
+
+### Settings and audio configuration
+
+The left sidebar has a gear-icon `settings` button immediately to the right of the Library folder-selection button. The Settings dialog has two pages:
+
+- **Audio Config**: MDX file, MDD file, one of six fixed UK Edge-TTS voices, one of six fixed US Edge-TTS voices, and `wait_seconds` (non-negative, at most one decimal place; default `2.0`).
+- **Playback**: default Passage accent (`British` / `American`).
+
+`audio_config.json` contains only the selected values; voice choice lists are program constants and are not persisted. Vocabulary `gen audio` is enabled only when the Vocabulary is non-empty, the configured MDX and MDD files both exist, and no audio-generation task is running. Passage Gen Audio uses Edge-TTS and does not require MDX/MDD.
+Both root configuration files are machine-local and are ignored by Git; missing files are recreated with safe defaults.
+
+
+### Bundled creation Skills
+
+`skills/passage_segment/SKILL.md` and `skills/image_to_passage/SKILL.md` follow the same schema enforced by the Article domain:
+
+- complete `Article` Passages contain no `[[n]]` placeholders and every Segment declares its standard UK/US `audio/{sid}_*.mp3` paths;
+- `ArticleBlank` Passages contain continuous unique `[[1]]..[[N]]` placeholders and Segment objects have no `audio` property;
+- there is no `tts_enabled` field;
+- supported Exercise types are exactly `article_choice`, `article_answer`, `article_cloze`, `article_cloze_words`, and `article_cloze_sentences`.
+
+Versioned documents under `docs/` are historical design records unless a newer README/current schema explicitly says otherwise.
 
 ## Passage data
 
@@ -339,6 +374,6 @@ The package still contains:
 - `skills/image_to_passage/SKILL.md`
 - `skills/vocabulary_enrichment/SKILL.md`
 
-The skills remain packaged separately from the V0.10.0 Data/Application refactor; this release does not change their data rules.
+The Passage-generation Skills are aligned with the current runtime schema in V0.12.7: there is no `tts_enabled`, ArticleBlank Segments omit `audio`, and Exercise generation uses the five supported `article_*` types. `vocabulary_enrichment` keeps its existing vocabulary rules.
 
-Detailed program rules are in `docs/English_Module_V0.5_Specification.md`, `docs/Vocabulary_Module_V0.8_Specification.md`, `docs/UI_Application_V0.8_Specification.md`, `docs/Audio_Generator_V0.9_Specification.md`, and `docs/Data_Application_V0.10_Specification.md`.
+The versioned files under `docs/` are historical design records for the evolution of the program. The current README, current Skills, and executable schema validation in the Article/Vocabulary modules are authoritative when an older design document differs.

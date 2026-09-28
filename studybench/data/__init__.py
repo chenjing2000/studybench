@@ -1,3 +1,8 @@
+from .app_settings_repository import (
+    AppSettingsRepository,
+    DEFAULT_PASSAGE_ACCENT,
+    default_app_settings,
+)
 from .article_repository import ArticleRepository
 from .library_repository import LibraryRepository
 from .user_data_repository import (
@@ -7,6 +12,9 @@ from .user_data_repository import (
 )
 
 __all__ = [
+    "AppSettingsRepository",
+    "DEFAULT_PASSAGE_ACCENT",
+    "default_app_settings",
     "ArticleRepository",
     "LibraryRepository",
     "UserDataRepository",

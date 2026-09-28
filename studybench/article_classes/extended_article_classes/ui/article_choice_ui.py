@@ -1,4 +1,5 @@
 from ...base_article_classes.ui.article_ui import ArticleUI, answer_map
+from ..exercise_components.article_choice_components import build_exercise_components as build_action_component
 
 
 class ArticleChoiceUI(ArticleUI):
@@ -25,4 +26,5 @@ class ArticleChoiceUI(ArticleUI):
                     ],
                 }
             )
+        components.append(build_action_component(article))
         return components

@@ -9,8 +9,8 @@ def read(path):
     return (PROJECT_ROOT / path).read_text(encoding="utf-8")
 
 
-def test_version_is_v0100():
-    assert 'version = "0.10.0"' in read("pyproject.toml")
+def test_project_version_matches_release():
+    assert 'version = "0.12.7"' in read("pyproject.toml")
 
 
 def test_article_feature_ui_layout_is_explicit():
@@ -78,6 +78,7 @@ def test_program_application_is_business_named_and_ui_free():
         "studybench/program/application/account_application.py",
         "studybench/program/application/article_application.py",
         "studybench/program/application/vocabulary_application.py",
+        "studybench/program/application/settings_application.py",
         "studybench/program/application/workspace_coordinator.py",
     ]
     for relative in expected:
@@ -100,6 +101,9 @@ def test_program_ui_has_left_center_right_shell_and_bridge():
         "studybench/program/ui/article_ui_registry.py",
         "studybench/program/ui/resource_paths.py",
         "studybench/program/ui/window_state.py",
+        "studybench/program/ui/settings_dialog.py",
+        "studybench/program/ui/settings_pages/audio_config_page.py",
+        "studybench/program/ui/settings_pages/playback_page.py",
         "studybench/program/ui/web/page.html",
         "studybench/program/ui/web/page.css",
         "studybench/program/ui/web/runtime.js",
@@ -290,12 +294,13 @@ def _imported_modules(relative):
     return result
 
 
-def test_v010_data_repositories_replace_english_data():
+def test_data_repositories_and_settings_owner_are_explicit():
     assert not (PROJECT_ROOT / "studybench/english_data.py").exists()
     for relative in (
         "studybench/data/library_repository.py",
         "studybench/data/article_repository.py",
         "studybench/data/user_data_repository.py",
+        "studybench/data/app_settings_repository.py",
     ):
         assert (PROJECT_ROOT / relative).is_file(), relative
     library = read("studybench/data/library_repository.py")
@@ -378,3 +383,196 @@ def test_edge_tts_provider_exposes_class_provider_only():
     source = read("studybench/program/audio_generator/tts/edge_tts_provider.py")
     assert "class EdgeTTSProvider" in source
     assert "def generate_edge_tts" not in source
+
+
+def test_audio_config_is_project_level_and_example_library_has_no_copy():
+    assert not (PROJECT_ROOT / "example_library_english/audio_config.json").exists()
+    config = read("studybench/program/audio_generator/config.py")
+    settings_app = read("studybench/program/application/settings_application.py")
+    main = read("studybench/main_window.py")
+    assert "AUDIO_CONFIG_FILENAME" in config
+    assert "UK_VOICE_CHOICES" in config and "US_VOICE_CHOICES" in config
+    assert "uk_voice_options" not in config
+    assert "us_voice_options" not in config
+    assert "self.project_root" in settings_app
+    assert 'self.settings_path = self.project_root / "settings.json"' in main
+
+
+def test_settings_ui_and_sidebar_contract():
+    left = read("studybench/program/ui/left_panel.py")
+    dialog = read("studybench/program/ui/settings_dialog.py")
+    audio_page = read("studybench/program/ui/settings_pages/audio_config_page.py")
+    playback_page = read("studybench/program/ui/settings_pages/playback_page.py")
+    vocabulary_panel = read("studybench/vocabulary/ui/vocabulary_panel.py")
+    assert "self.settings_button = QToolButton()" in left
+    assert 'resource_path("settings/setting.png")' in left
+    assert 'tabs.addTab(self.audio_page, "Audio Config")' in dialog
+    assert 'tabs.addTab(self.playback_page, "Playback")' in dialog
+    assert "UK_VOICE_CHOICES" in audio_page and "US_VOICE_CHOICES" in audio_page
+    assert "QRegularExpressionValidator" in audio_page
+    assert 'self.accent_combo.addItem("British", "uk")' in playback_page
+    assert 'self.accent_combo.addItem("American", "us")' in playback_page
+    assert 'QPushButton("gen audio")' in vocabulary_panel
+    assert 'header.addWidget(self.import_button)' in vocabulary_panel
+    assert 'header.addWidget(self.export_button)' in vocabulary_panel
+
+
+def test_compact_ui_layout_contract():
+    dialog = read("studybench/program/ui/settings_dialog.py")
+    vocabulary_panel = read("studybench/vocabulary/ui/vocabulary_panel.py")
+    runtime = read("studybench/program/ui/web/runtime.js")
+    assert "self.resize(420, 420)" in dialog
+    assert "self.setMaximumSize(NORMAL_MAX_WIDTH, NORMAL_MAX_HEIGHT)" in dialog
+    assert "setFixedSize(60, SIDEBAR_BUTTON_HEIGHT)" in vocabulary_panel
+    assert "header.setSpacing(8)" in vocabulary_panel
+    assert "button.setFixedWidth(60)" in vocabulary_panel
+    assert "footer.setSpacing(8)" in vocabulary_panel
+    assert "footer.addStretch(1)" in vocabulary_panel
+    assert 'button.style.color = String(ui.button_text_color || "#4c8045")' in runtime
+    assert 'button.style.fontWeight = String(ui.button_font_weight || "700")' in runtime
+
+
+def test_settings_dialog_maximize_contract():
+    dialog = read("studybench/program/ui/settings_dialog.py")
+    assert "NORMAL_MAX_WIDTH = 480" in dialog
+    assert "NORMAL_MAX_HEIGHT = 450" in dialog
+    assert "Qt.WindowType.WindowMaximizeButtonHint" in dialog
+    assert "QEvent.Type.WindowStateChange" in dialog
+    assert "screen.availableGeometry()" in dialog
+    assert "self.setMaximumSize(available.width(), available.height())" in dialog
+
+
+def test_window_state_uses_settings_repository_and_preserves_playback_section():
+    source = read("studybench/program/ui/window_state.py")
+    assert "settings_repository" in source
+    assert "save_window_state" in source
+    assert "write_json_atomic" not in source
+    repository = read("studybench/data/app_settings_repository.py")
+    assert "save_playback" in repository
+    assert "default_passage_accent" in repository
+
+
+def test_runtime_accepts_default_passage_accent():
+    runtime = read("studybench/program/ui/web/runtime.js")
+    main = read("studybench/main_window.py")
+    assert "viewModel.default_accent" in runtime
+    assert "window.setPassageAccent" in runtime
+    assert 'view_model["default_accent"]' in main
+
+
+def test_exercise_components_are_explicit_and_type_specific():
+    base = PROJECT_ROOT / "studybench/article_classes/extended_article_classes/exercise_components"
+    expected = [
+        "exercise_components_ui.py",
+        "article_answer_components.py",
+        "article_choice_components.py",
+        "article_cloze_components.py",
+        "article_cloze_sentences_components.py",
+        "article_cloze_words_components.py",
+    ]
+    for name in expected:
+        assert (base / name).is_file(), name
+    assert not (base / "common.py").exists()
+    ui = (base / "exercise_components_ui.py").read_text(encoding="utf-8")
+    assert "BUTTON_WIDTH_PX = 70" in ui
+    assert "BUTTON_HEIGHT_PX = 30" in ui
+    assert "BUTTON_GAP_PX = 15" in ui
+    assert '"button_font_size_pt": 12' in ui
+    assert '"button_text_color": "#4c8045"' in ui
+    assert '"button_font_weight": "700"' in ui
+    assert '"button_border_radius_px": 8' in ui
+    for name in expected[1:]:
+        source = (base / name).read_text(encoding="utf-8")
+        assert "def build_hints_action" in source
+        assert "def build_ref_answer_action" in source
+        assert "def build_reset_action" in source
+
+
+def test_runtime_supports_toggle_feedback_and_reset_without_article_type_dispatch():
+    runtime = read("studybench/program/ui/web/runtime.js")
+    assert 'type === "exercise_actions"' in runtime
+    assert "exerciseHintsVisible" in runtime
+    assert "exerciseRefAnswersVisible" in runtime
+    assert "mark_wrong_selection" in runtime
+    assert "#c8161d" in read(
+        "studybench/article_classes/extended_article_classes/exercise_components/article_choice_components.py"
+    )
+    assert "resetExerciseAnswers" in runtime
+    assert "refreshExerciseActions" in runtime
+    for old_dispatch in (
+        'articleType === "article_choice"',
+        'articleType === "article_answer"',
+        'articleType === "article_cloze"',
+        'articleType === "article_cloze_words"',
+        'articleType === "article_cloze_sentences"',
+    ):
+        assert old_dispatch not in runtime
+
+
+def test_settings_icon_resource_and_left_toolbar_position():
+    left = read("studybench/program/ui/left_panel.py")
+    icon = PROJECT_ROOT / "studybench/program/ui/resources/settings/setting.png"
+    assert icon.is_file()
+    assert "library_controls_layout.addWidget(self.select_folder_button, 1)" in left
+    assert "library_controls_layout.addWidget(self.settings_button)" in left
+    assert "self.settings_button.setIconSize(QSize(22, 22))" in left
+    assert "self.settings_button.setFixedSize(" in left
+    assert 'self.settings_button.setToolTip("settings")' in left
+    assert "\n        layout.addWidget(self.settings_button)" not in left
+
+
+def test_main_window_explicitly_enables_maximize_button():
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "studybench" / "main_window.py").read_text(encoding="utf-8")
+    assert "Qt.WindowType.WindowMaximizeButtonHint" in source
+    assert "self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)" in source
+
+
+def test_main_window_does_not_apply_finite_maximum_size():
+    source = read("studybench/program/ui/window_state.py")
+    assert "window.setMaximumSize(available.width(), available.height())" not in source
+    assert "window.setMinimumSize(" in source
+
+
+def test_bundled_passage_skills_match_current_article_schema():
+    segment_skill = read("skills/passage_segment/SKILL.md")
+    image_skill = read("skills/image_to_passage/SKILL.md")
+
+    assert '"tts_enabled":' not in segment_skill
+    assert '"tts_enabled":' not in image_skill
+    assert '"type": "choice"' not in image_skill
+    assert '"type": "fill_blank"' not in image_skill
+
+    for exercise_type in (
+        "article_choice",
+        "article_answer",
+        "article_cloze",
+        "article_cloze_words",
+        "article_cloze_sentences",
+    ):
+        assert exercise_type in image_skill
+
+    assert "ArticleBlank" in segment_skill
+    assert "omit `audio` completely" in segment_skill
+    assert "no Segment contains `audio`" in image_skill
+
+
+def test_confirmed_dead_legacy_helpers_are_removed():
+    assert "write_text_atomic" not in read("studybench/json_store.py")
+    assert "class DataError" not in read("studybench/program/audio_generator/io_utils.py")
+    assert "LoadedArticle" not in read("studybench/data/article_repository.py")
+    assert "TtsConfig" not in read("studybench/program/audio_generator/tts/edge_tts_provider.py")
+
+    account = read("studybench/program/application/account_application.py")
+    article = read("studybench/program/application/article_application.py")
+    vocabulary_app = read("studybench/program/application/vocabulary_application.py")
+    vocabulary = read("studybench/vocabulary/vocabulary.py")
+
+    assert "def current_accounts(" not in account
+    assert "def load_for_book(" not in account
+    assert "def warning(" not in article
+    assert "def open_passage(self, passage_dir, user_folder)" not in article
+    assert "_warning" not in article
+    assert "def open_passage(self, passage_dir)" not in vocabulary_app
+    assert "def count(self):" not in vocabulary
+    assert "def get(self, index):" not in vocabulary

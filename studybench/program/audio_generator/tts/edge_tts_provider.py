@@ -1,7 +1,7 @@
 import asyncio
 import time
 
-from ..models import AudioPayloads, TtsConfig
+from ..models import AudioPayloads
 
 
 class TtsError(RuntimeError):

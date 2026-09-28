@@ -70,24 +70,31 @@ def test_extended_ui_builders_reuse_family_passage_and_add_exercises(tmp_path):
     radio = question["children"][1]
     assert radio["type"] == "radio_group"
     assert radio["value"] == "B"
+    assert vm["components"][-1]["type"] == "exercise_actions"
 
     answer = ArticleAnswer(tmp_path, article_passage(), {
         "type": "article_answer",
         "questions": [{"number": 1, "prompt": "How?", "reference_answer": "Well.", "explanation": ""}],
     })
-    assert any(item["type"] == "question" for item in ArticleAnswerUI().build_view_model(answer)["components"])
+    avm = ArticleAnswerUI().build_view_model(answer)
+    assert any(item["type"] == "question" for item in avm["components"])
+    assert avm["components"][-1]["type"] == "exercise_actions"
 
     cloze = ArticleCloze(tmp_path, blank_passage(), {
         "type": "article_cloze",
         "items": [{"number": 1, "options": [{"key": "A", "text": "good"}, {"key": "B", "text": "bad"}], "reference_answer": "A", "explanation": ""}],
     })
-    assert any(item["type"] == "cloze_row" for item in ArticleClozeUI().build_view_model(cloze)["components"])
+    cvm = ArticleClozeUI().build_view_model(cloze)
+    assert any(item["type"] == "cloze_row" for item in cvm["components"])
+    assert cvm["components"][-1]["type"] == "exercise_actions"
 
     words = ArticleClozeWords(tmp_path, blank_passage(), {
         "type": "article_cloze_words",
         "items": [{"number": 1, "cue": "bright", "reference_answer": "brightly", "explanation": ""}],
     })
-    assert any(item["type"] == "fill_row" for item in ArticleClozeWordsUI().build_view_model(words)["components"])
+    wvm = ArticleClozeWordsUI().build_view_model(words)
+    assert any(item["type"] == "fill_row" for item in wvm["components"])
+    assert wvm["components"][-1]["type"] == "exercise_actions"
 
     sentences = ArticleClozeSentences(tmp_path, blank_passage(), {
         "type": "article_cloze_sentences",
@@ -97,3 +104,4 @@ def test_extended_ui_builders_reuse_family_passage_and_add_exercises(tmp_path):
     svm = ArticleClozeSentencesUI().build_view_model(sentences)
     assert any(item["type"] == "option_pool" for item in svm["components"])
     assert "passage_audio_controls" not in component_types(svm)
+    assert svm["components"][-1]["type"] == "exercise_actions"

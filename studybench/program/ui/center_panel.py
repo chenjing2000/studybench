@@ -45,6 +45,12 @@ class CenterPanel(QWebEngineView):
         if self.page_loaded:
             self.page().runJavaScript("window.setVocabularyHighlightsVisible(" + ("true" if visible else "false") + ");")
 
+    def set_passage_accent(self, accent):
+        if self.page_loaded:
+            self.page().runJavaScript(
+                "window.setPassageAccent(" + json.dumps(str(accent)) + ");"
+            )
+
     def set_gen_audio_enabled(self, enabled):
         if self.page_loaded:
             self.page().runJavaScript("window.setGenAudioEnabled(" + ("true" if enabled else "false") + ");")

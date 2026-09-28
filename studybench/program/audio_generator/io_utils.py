@@ -3,10 +3,6 @@ import tempfile
 from pathlib import Path
 
 
-class DataError(ValueError):
-    pass
-
-
 def is_nonempty_file(path):
     path = Path(path)
     try:

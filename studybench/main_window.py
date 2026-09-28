@@ -1,11 +1,12 @@
 from pathlib import Path
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QMainWindow
 
 from .program.ui.audio_playback import AudioPlayback
 from .program.ui.audio_task_runner import AudioTaskRunner
 from .data import (
+    AppSettingsRepository,
     ArticleRepository,
     DEFAULT_USER_FOLDER,
     LibraryRepository,
@@ -14,6 +15,7 @@ from .data import (
 from .program.application.account_application import AccountApplication
 from .program.application.article_application import ArticleApplication
 from .program.application.library_application import LibraryApplication
+from .program.application.settings_application import SettingsApplication
 from .program.application.vocabulary_application import VocabularyApplication
 from .program.audio_generator.mdict.provider import LazyMdictProvider
 from .program.audio_generator.passage_generator import PassageGenerator
@@ -25,6 +27,7 @@ from .program.ui.account_dialogs import (
 )
 from .program.ui.article_ui_registry import ArticleUIRegistry
 from .program.ui.main_window_ui import MainWindowUI
+from .program.ui.settings_dialog import SettingsDialog
 from .program.ui.window_state import WindowStateManager
 from .run_log import write_log
 from .vocabulary.ui.vocabulary_presenter import VocabularyPresenter
@@ -47,8 +50,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.project_root = Path(__file__).resolve().parent.parent
         self.settings_path = self.project_root / "settings.json"
-        self.window_state = WindowStateManager(self.settings_path)
+        self.app_settings_repository = AppSettingsRepository(self.settings_path)
+        self.window_state = WindowStateManager(self.app_settings_repository)
         self.saved_settings = self.window_state.settings
+        self.settings_application = SettingsApplication(
+            self.project_root, self.app_settings_repository
+        )
 
         self.article_repository = ArticleRepository()
         self.user_data_repository = UserDataRepository()
@@ -64,6 +71,7 @@ class MainWindow(QMainWindow):
             self.user_data_repository,
             self.audio_player,
             PassageGenerator(self.tts_provider),
+            default_accent=self.settings_application.default_passage_accent(),
         )
         self.vocabulary_application = VocabularyApplication(
             self.audio_player,
@@ -90,6 +98,8 @@ class MainWindow(QMainWindow):
         self.status_timer.timeout.connect(self._show_next_queued_status)
 
         self.setWindowTitle("StudyBench")
+        # Keep the native title-bar maximize control available on the main window.
+        self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
         self.resize(1200, 800)
         self.ui = MainWindowUI(self.project_root, self)
         self.setCentralWidget(self.ui)
@@ -101,6 +111,7 @@ class MainWindow(QMainWindow):
 
         self._connect_signals()
         self._refresh_account_controls()
+        self._set_audio_job_buttons_enabled(True)
         self.statusBar().showMessage("就绪", 5000)
         self._load_initial_library()
 
@@ -115,6 +126,7 @@ class MainWindow(QMainWindow):
         self.left_panel.register_clicked.connect(self.register_user)
         self.left_panel.sign_in_clicked.connect(self.sign_in)
         self.left_panel.sign_out_clicked.connect(self.sign_out)
+        self.left_panel.settings_clicked.connect(self.open_settings)
 
         bridge = self.center_panel.bridge
         bridge.accent_requested.connect(self.article_application.set_accent)
@@ -133,8 +145,8 @@ class MainWindow(QMainWindow):
         self.vocabulary_panel.delete_requested.connect(self.delete_vocabulary_word)
         self.vocabulary_panel.export_requested.connect(self.export_vocabulary)
         self.vocabulary_panel.import_requested.connect(self.import_vocabulary)
-        self.vocabulary_panel.gen_words_audio_requested.connect(
-            self.start_gen_words_audio
+        self.vocabulary_panel.gen_audio_requested.connect(
+            self.start_vocabulary_audio
         )
         self.vocabulary_panel.highlight_visibility_changed.connect(
             self.set_vocabulary_highlights_visible
@@ -143,6 +155,38 @@ class MainWindow(QMainWindow):
         self.audio_task_runner.finished.connect(self._audio_generation_finished)
         self.audio_player.state_changed.connect(self.center_panel.update_audio_state)
         self.audio_player.message.connect(self._audio_player_message)
+
+    def open_settings(self):
+        try:
+            snapshot = self.settings_application.load()
+        except Exception as error:
+            self.show_status(f"无法打开 Settings：{error}")
+            return
+        dialog = SettingsDialog(snapshot, self)
+        dialog.save_requested.connect(
+            lambda audio_config, accent: self._save_settings(
+                dialog, audio_config, accent
+            )
+        )
+        dialog.exec()
+
+    def _save_settings(self, dialog, audio_config, default_passage_accent):
+        try:
+            saved = self.settings_application.save(
+                audio_config, default_passage_accent
+            )
+        except Exception as error:
+            dialog.show_error(str(error))
+            return
+        self.article_application.set_default_accent(
+            saved.default_passage_accent, apply_now=True
+        )
+        self.center_panel.set_passage_accent(saved.default_passage_accent)
+        self.window_state.reload_settings()
+        self.saved_settings = self.window_state.settings
+        self._set_audio_job_buttons_enabled(not self.audio_task_runner.is_running)
+        dialog.accept()
+        self.show_status("Settings 已保存。")
 
     # ------------------------------------------------------------------
     # Library / account workflows
@@ -299,6 +343,7 @@ class MainWindow(QMainWindow):
         view_model = self.article_ui_registry.build_view_model(
             article, self.article_application.current_answers
         )
+        view_model["default_accent"] = self.article_application.accent
         self.center_panel.render_view_model(view_model)
         self._set_audio_job_buttons_enabled(not self.audio_task_runner.is_running)
         self.center_panel.set_exercise_save_allowed(
@@ -395,9 +440,7 @@ class MainWindow(QMainWindow):
             self.show_status("尚未选择 Library 文件夹。")
             return
         try:
-            job = self.article_application.prepare_audio_job(
-                self.library_application.current_library
-            )
+            job = self.article_application.prepare_audio_job(self.project_root)
         except Exception as error:
             if self.library_application.current_passage_path:
                 write_log(
@@ -533,7 +576,7 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-    def start_gen_words_audio(self):
+    def start_vocabulary_audio(self):
         if self.audio_task_runner.is_running:
             return
         if not self.library_application.current_library:
@@ -541,7 +584,7 @@ class MainWindow(QMainWindow):
             return
         try:
             job = self.vocabulary_application.prepare_audio_job(
-                self.library_application.current_library,
+                self.project_root,
                 self.library_application.current_passage_path,
             )
         except Exception as error:
@@ -549,7 +592,7 @@ class MainWindow(QMainWindow):
                 write_log(
                     self.library_application.current_passage_path,
                     "ERROR",
-                    f"Gen Words Audio not started: {error}",
+                    f"Vocabulary Gen Audio not started: {error}",
                 )
             self.show_status(str(error))
             return
@@ -559,7 +602,7 @@ class MainWindow(QMainWindow):
         self._start_audio_job(
             VOCABULARY_AUDIO_JOB,
             job,
-            label="Gen Words Audio",
+            label="Vocabulary Gen Audio",
             title=passage_title,
             detail=f"Vocabulary: {len(job['request'].entries)}",
             task=lambda: self.vocabulary_application.run_audio_job(job),
@@ -582,14 +625,14 @@ class MainWindow(QMainWindow):
         if error_text:
             write_log(passage_dir, "ERROR", f"Audio generation failed: {error_text}")
             message = (
-                "Gen Words Audio 失败：" + error_text
+                "Vocabulary gen audio 失败：" + error_text
                 if job_kind == VOCABULARY_AUDIO_JOB
                 else "Gen Audio 失败：" + error_text
             )
         else:
             self._log_audio_generation_result(passage_dir, result)
             partial = bool(getattr(result, "incomplete", False))
-            label = "Gen Words Audio" if job_kind == VOCABULARY_AUDIO_JOB else "Gen Audio"
+            label = "Vocabulary gen audio" if job_kind == VOCABULARY_AUDIO_JOB else "Gen Audio"
             if partial:
                 errors = getattr(getattr(result, "stats", None), "errors", [])
                 detail = str(errors[0]) if errors else "部分文件处理失败。"
@@ -635,7 +678,9 @@ class MainWindow(QMainWindow):
         self.center_panel.set_gen_audio_enabled(
             bool(enabled) and self.article_application.audio_capable
         )
-        self.vocabulary_panel.set_audio_generation_enabled(bool(enabled))
+        self.vocabulary_panel.set_audio_generation_enabled(
+            bool(enabled) and self.settings_application.vocabulary_audio_ready()
+        )
 
     # ------------------------------------------------------------------
     # Logging / status

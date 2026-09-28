@@ -1,5 +1,6 @@
 from ...base_article_classes.ui.article_blank_ui import ArticleBlankUI
 from ...base_article_classes.ui.article_ui import answer_map
+from ..exercise_components.article_cloze_sentences_components import build_exercise_components as build_action_component
 
 
 class ArticleClozeSentencesUI(ArticleBlankUI):
@@ -26,10 +27,12 @@ class ArticleClozeSentencesUI(ArticleBlankUI):
                     ],
                 }
             )
-        return [
+        components = [
             {
                 "type": "option_pool",
                 "options": [dict(option) for option in article.exercise["options"]],
             },
             {"type": "sentence_answer_list", "children": rows},
         ]
+        components.append(build_action_component(article))
+        return components

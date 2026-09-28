@@ -11,7 +11,6 @@ from .ports import AudioPlaybackPort
 class PreparedArticleState:
     article: object
     answers: object
-    warning: str | None
     warnings: tuple
 
 
@@ -24,6 +23,7 @@ class ArticleApplication:
         user_data_repository,
         audio_player: AudioPlaybackPort | None = None,
         passage_generator=None,
+        default_accent="uk",
     ):
         self.article_repository = article_repository
         self.user_data_repository = user_data_repository
@@ -32,8 +32,8 @@ class ArticleApplication:
         self._current_article = None
         self._current_answers = None
         self._exercise_dirty = False
-        self._accent = "uk"
-        self._warning = None
+        self._default_accent = self._validate_default_accent(default_accent)
+        self._accent = self._default_accent
 
     @property
     def current_article(self):
@@ -50,10 +50,6 @@ class ArticleApplication:
     @property
     def accent(self):
         return self._accent
-
-    @property
-    def warning(self):
-        return self._warning
 
     def prepare_passage(self, passage_dir, user_folder):
         loaded = self.article_repository.load(passage_dir)
@@ -84,21 +80,14 @@ class ArticleApplication:
         return PreparedArticleState(
             article=article,
             answers=answers,
-            warning=loaded.warning,
             warnings=tuple(warnings),
         )
 
     def commit_prepared(self, state):
         self._current_article = state.article
         self._current_answers = state.answers
-        self._warning = state.warning
         self._exercise_dirty = False
-        self._accent = "uk"
-
-    def open_passage(self, passage_dir, user_folder):
-        state = self.prepare_passage(passage_dir, user_folder)
-        self.commit_prepared(state)
-        return list(state.warnings)
+        self._accent = self._default_accent
 
     def refresh_answers(self, user_folder):
         if self._current_article is None or not self._current_article.has_exercise:
@@ -153,6 +142,15 @@ class ArticleApplication:
     def audio_capable(self):
         return isinstance(self._current_article, Article)
 
+    @property
+    def default_accent(self):
+        return self._default_accent
+
+    def set_default_accent(self, accent, *, apply_now=False):
+        self._default_accent = self._validate_default_accent(accent)
+        if apply_now:
+            self.set_accent(self._default_accent)
+
     def set_accent(self, accent):
         if accent not in ("uk", "us"):
             return
@@ -185,11 +183,11 @@ class ArticleApplication:
         if self.audio_player is not None:
             self.audio_player.stop()
 
-    def prepare_audio_job(self, library_dir):
+    def prepare_audio_job(self, config_root):
         self._require_audio_article()
         if self.passage_generator is None:
             raise ValueError("PassageGenerator 不可用。")
-        config = load_passage_tts_config_for_run(library_dir)
+        config = load_passage_tts_config_for_run(config_root)
         tts_config = TtsConfig(**config)
         passage_dir = self._current_article.passage_dir
         segments = []
@@ -222,8 +220,13 @@ class ArticleApplication:
         self._current_article = None
         self._current_answers = None
         self._exercise_dirty = False
-        self._accent = "uk"
-        self._warning = None
+        self._accent = self._default_accent
+
+    @staticmethod
+    def _validate_default_accent(accent):
+        if accent not in ("uk", "us"):
+            raise ValueError("default accent 必须是 uk 或 us。")
+        return accent
 
     def _require_audio_article(self):
         if self._current_article is None:

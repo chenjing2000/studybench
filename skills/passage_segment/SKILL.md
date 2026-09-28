@@ -1,35 +1,38 @@
-# Passage Segment Skill — V0.3
+# Passage Segment Skill — V0.4
 
 ## Purpose
 
-Create one complete StudyBench `passage.json` from a Passage title, the original Passage body, and the Passage-level `tts_enabled` setting.
+Create one complete StudyBench `passage.json` from a Passage title and original Passage body.
 
 This skill is **CREATE-only**. It does not update an existing Passage while preserving old SIDs.
 
-`tts_enabled` controls only Passage TTS data. It must never change Paragraph boundaries, Segment generation, SID allocation, or `next_sid`.
+StudyBench has two Passage families:
+
+- **Article**: complete readable text, no `[[n]]` placeholders; every Segment contains standard UK/US Passage audio paths.
+- **ArticleBlank**: text contains one or more `[[n]]` placeholders; Segment objects must not contain an `audio` property.
+
+There is no `tts_enabled` field in the current schema.
 
 ## Input
 
-- Passage title
-- Original Passage body
-- optional `tts_enabled` boolean
-
-If `tts_enabled` is not explicitly supplied, use `false`.
+- Passage title;
+- original Passage body.
 
 Natural Paragraph boundaries are defined by blank lines in the source text. Formatting-only line wraps inside one natural Paragraph are normalized to one ASCII space.
+
+If the source contains answer blanks, they must already be represented as StudyBench placeholders `[[1]]`, `[[2]]`, ... before this skill generates the final JSON.
 
 ## Output
 
 Output pure JSON only. Do not use Markdown fences and do not add commentary.
 
-`tts_enabled` is required in every generated `passage.json` and must be a JSON boolean.
+### Complete Article
 
-When `tts_enabled` is `true`, the structure is:
+When the body contains no `[[n]]` placeholders, generate an Article. Every Segment must contain standard audio paths:
 
 ```json
 {
   "title": "Example Passage",
-  "tts_enabled": true,
   "next_sid": 4,
   "paragraphs": [
     {
@@ -68,23 +71,20 @@ When `tts_enabled` is `true`, the structure is:
 }
 ```
 
-When `tts_enabled` is `false`, the Paragraph and Segment structure is unchanged, but every Segment keeps an empty `audio` object:
+### ArticleBlank
+
+When the body contains valid `[[n]]` placeholders, generate an ArticleBlank. Segment objects must not contain `audio`:
 
 ```json
 {
-  "title": "Example Passage",
-  "tts_enabled": false,
+  "title": "Example Blank Passage",
   "next_sid": 2,
   "paragraphs": [
     {
       "paragraph": [
         {
           "sid": "s001",
-          "text": "First complete sentence.",
-          "audio": {
-            "uk": "",
-            "us": ""
-          }
+          "text": "He started to [[1]] his parents."
         }
       ]
     }
@@ -92,18 +92,31 @@ When `tts_enabled` is `false`, the Paragraph and Segment structure is unchanged,
 }
 ```
 
-## `tts_enabled` rule
+## Article family rule
 
-- `tts_enabled` is a Passage-level boolean and is always written explicitly.
-- Default to `false` when the caller does not explicitly provide a value.
-- `tts_enabled` controls only whether Passage Segment TTS paths are declared.
-- Never infer or change Segment construction because of `tts_enabled`.
-- Never infer `tts_enabled` from Exercise question types inside this skill.
-- This skill does not generate audio files.
+Determine the family only from the Passage body:
+
+- no valid `[[n]]` placeholders → Article;
+- one or more valid `[[n]]` placeholders → ArticleBlank.
+
+Do not infer the family from an Exercise type alone.
+
+For ArticleBlank:
+
+- every placeholder number must be an integer >= 1;
+- each placeholder number appears exactly once in the whole Passage;
+- numbering must be continuous from `[[1]]` through `[[N]]`;
+- malformed variants such as `[[0]]`, `[[x]]`, `[[ 1 ]]`, unmatched `[[` or `]]` are invalid;
+- no Segment may contain an `audio` property.
+
+For Article:
+
+- no Segment text may contain `[[` or `]]`;
+- every Segment must contain exactly the standard UK/US audio paths for its SID.
 
 ## SID rules
 
-- SIDs are lowercase: `s001`, `s002`, ...
+- SIDs are lowercase: `s001`, `s002`, ...;
 - start at `s001` for a newly created Passage;
 - use three digits;
 - never emit `s000`;
@@ -147,7 +160,7 @@ A Paragraph boundary always ends the final Segment in that Paragraph even if the
 
 ## Text normalization
 
-- Preserve spelling, capitalization, punctuation, numbers, quotation marks, and word order.
+- Preserve spelling, capitalization, punctuation, numbers, quotation marks, word order, and StudyBench `[[n]]` placeholders.
 - Remove leading/trailing whitespace around each Paragraph.
 - Normalize formatting-only line wraps inside one natural Paragraph to one ASCII space.
 - `Segment.text` must not contain program-added leading or trailing whitespace.
@@ -156,16 +169,7 @@ A Paragraph boundary always ends the final Segment in that Paragraph even if the
 
 ## Audio fields
 
-Every Segment must contain the `audio` object with both `uk` and `us` keys.
-
-When `tts_enabled` is `true`, declare exactly:
-
-```text
-audio/{sid}_uk.mp3
-audio/{sid}_us.mp3
-```
-
-For `s007` this is exactly:
+For a complete Article, every Segment must contain:
 
 ```json
 "audio": {
@@ -174,27 +178,20 @@ For `s007` this is exactly:
 }
 ```
 
-When `tts_enabled` is `false`, both values must be empty strings:
+for Segment `s007`.
 
-```json
-"audio": {
-  "uk": "",
-  "us": ""
-}
-```
+For ArticleBlank, omit `audio` completely. Do not write empty audio strings.
 
-Do not omit the `audio` object and do not write audio paths when `tts_enabled` is `false`.
-
-This skill does not generate audio files, Vocabulary, Exercise data, or any cache/hash file.
+This skill declares paths only; it does not generate audio files, Vocabulary, Exercise data, or cache/hash files.
 
 ## Final validation
 
 Before returning the JSON, verify:
 
-- `tts_enabled` exists and is a JSON boolean;
-- Paragraph and Segment generation followed the same rules regardless of `tts_enabled`;
+- there is no `tts_enabled` property;
+- Paragraph and Segment boundaries follow the source text;
 - all SIDs are unique, lowercase, and in reading order;
 - `next_sid` is correct;
-- every Segment contains `audio.uk` and `audio.us`;
-- when `tts_enabled` is `true`, every audio path exactly matches its SID;
-- when `tts_enabled` is `false`, every audio path value is exactly `""`.
+- complete Articles contain no placeholders and every Segment has exact SID-matching UK/US audio paths;
+- ArticleBlank contains continuous unique `[[1]]..[[N]]` placeholders and no Segment contains `audio`;
+- malformed placeholder syntax is absent.

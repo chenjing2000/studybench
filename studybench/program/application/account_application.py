@@ -24,10 +24,6 @@ class AccountApplication:
         self._current_user_available = False
 
     @property
-    def current_accounts(self):
-        return list(self._current_accounts)
-
-    @property
     def current_user_folder(self):
         return self._current_user_folder
 
@@ -74,11 +70,6 @@ class AccountApplication:
         self._current_user_folder = state.user_folder
         self._current_username = state.username
         self._current_user_available = bool(state.available)
-
-    def load_for_book(self, book_dir):
-        state = self.prepare_for_book(book_dir)
-        self.commit_prepared(state)
-        return list(state.warnings)
 
     def clear(self):
         self._current_accounts = []

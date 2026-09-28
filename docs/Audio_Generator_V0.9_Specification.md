@@ -1,5 +1,7 @@
 # Audio Generator V0.9 Specification
 
+> Historical note: V0.11 moves `audio_config.json` from the selected Library root to the StudyBench project root beside `settings.json`. The rest of this document describes the V0.9 architecture.
+
 ## Purpose
 
 `studybench/program/audio_generator/` is the reusable, UI-free audio-generation infrastructure. It replaces the former root-level `studybench_audio_extractor` package and the old root audio helper modules.

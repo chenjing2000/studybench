@@ -26,14 +26,8 @@ class Vocabulary:
     def cells(self):
         return tuple(self._cells)
 
-    def count(self):
-        return len(self._cells)
-
     def clear(self):
         self._cells.clear()
-
-    def get(self, index):
-        return self._cells[index]
 
     def find_index(self, word):
         target = Word.normalize_text(word).casefold()

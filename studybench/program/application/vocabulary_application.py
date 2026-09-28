@@ -45,16 +45,13 @@ class VocabularyApplication:
             self._current_vocabulary = vocabulary
             self._revision += 1
 
-    def open_passage(self, passage_dir):
-        loaded = self.prepare_passage(passage_dir)
-        self.commit_prepared(loaded)
-        return self.snapshot()
-
     def reload(self, passage_dir):
         if not passage_dir:
             self.clear()
             return self.snapshot()
-        return self.open_passage(passage_dir)
+        loaded = self.prepare_passage(passage_dir)
+        self.commit_prepared(loaded)
+        return self.snapshot()
 
     def clear(self):
         with self._lock:
@@ -126,11 +123,11 @@ class VocabularyApplication:
         self.audio_player.play_single(path, f"word:{accent}:{word}")
         return relative
 
-    def prepare_audio_job(self, library_dir, passage_dir):
+    def prepare_audio_job(self, config_root, passage_dir):
         self._require_passage(passage_dir)
         if self.dictionary_provider_factory is None or self.tts_provider is None:
             raise ValueError("Vocabulary audio providers 不可用。")
-        config = load_vocabulary_audio_config_for_run(library_dir)
+        config = load_vocabulary_audio_config_for_run(config_root)
         root = Path(passage_dir)
         with self._lock:
             if len(self._current_vocabulary) == 0:

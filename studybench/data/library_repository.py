@@ -51,22 +51,22 @@ class LibraryRepository:
             raw = []
             changed = True
         cleaned = []
-        seen = {DEFAULT_USER_FOLDER.casefold()}
+        seen = set()
+        default_key = DEFAULT_USER_FOLDER.casefold()
         for folder_name in raw:
             try:
                 user_folder_validator(folder_name)
             except Exception as error:
                 warnings.append(f"《{bookname}》：忽略无效用户目录引用：{error}")
-                changed = True
                 continue
             key = folder_name.casefold()
             if key in seen:
-                if folder_name != DEFAULT_USER_FOLDER:
+                if key != default_key:
                     warnings.append(f"《{bookname}》：忽略重复用户目录引用 {folder_name}。")
-                changed = True
                 continue
             seen.add(key)
-            cleaned.append(folder_name)
+            if key != default_key:
+                cleaned.append(folder_name)
         references = [DEFAULT_USER_FOLDER, *cleaned]
         if raw != references:
             changed = True
@@ -82,7 +82,6 @@ class LibraryRepository:
         user_folder_validator(folder_name)
         book_dir = Path(book_dir)
         book_path = book_dir / "book.json"
-        book = self.read_book(book_dir)
         references, _warnings = self.ensure_userdata_references(
             book_dir, user_folder_validator
         )

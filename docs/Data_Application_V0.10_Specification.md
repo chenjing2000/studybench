@@ -1,5 +1,7 @@
 # StudyBench Data / Application Architecture — V0.10.0
 
+> Historical note: V0.11 adds `AppSettingsRepository` as the sole owner of root `settings.json`; `WindowStateManager` now updates window-state fields through that repository.
+
 ## 1. Purpose
 
 V0.10.0 removes the former `EnglishData` compatibility object and makes file ownership, current-state ownership, and Data/Application/UI boundaries explicit. The goal is not to add another framework: repositories are small persistence boundaries, Applications own live workflow state, Feature UI builds presentation data, and Program UI owns Qt/Web details.

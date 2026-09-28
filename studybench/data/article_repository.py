@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ..article_classes.factory import LoadedArticle, build_article
+from ..article_classes.factory import build_article
 from ..article_classes.utils import validate_title
 from ..json_store import read_json
 

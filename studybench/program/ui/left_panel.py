@@ -1,16 +1,19 @@
 from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QSize, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from .library_tree import LibraryTree
+from .resource_paths import resource_path
 
 
 SIDEBAR_BUTTON_HEIGHT = 30
@@ -22,6 +25,7 @@ class LeftPanel(QWidget):
     register_clicked = Signal()
     sign_in_clicked = Signal()
     sign_out_clicked = Signal()
+    settings_clicked = Signal()
 
     def __init__(self, project_root, parent=None):
         super().__init__(parent)
@@ -52,6 +56,24 @@ class LeftPanel(QWidget):
         self.sign_in_button.clicked.connect(self.sign_in_clicked.emit)
         self.sign_out_button.clicked.connect(self.sign_out_clicked.emit)
 
+        self.settings_button = QToolButton()
+        self.settings_button.setIcon(
+            QIcon(str(resource_path("settings/setting.png")))
+        )
+        self.settings_button.setIconSize(QSize(22, 22))
+        self.settings_button.setFixedSize(
+            SIDEBAR_BUTTON_HEIGHT, SIDEBAR_BUTTON_HEIGHT
+        )
+        self.settings_button.setToolTip("settings")
+        self.settings_button.setAccessibleName("settings")
+        self.settings_button.clicked.connect(self.settings_clicked.emit)
+
+        library_controls_layout = QHBoxLayout()
+        library_controls_layout.setContentsMargins(0, 0, 0, 0)
+        library_controls_layout.setSpacing(8)
+        library_controls_layout.addWidget(self.select_folder_button, 1)
+        library_controls_layout.addWidget(self.settings_button)
+
         account_layout = QHBoxLayout()
         account_layout.setContentsMargins(0, 0, 0, 0)
         account_layout.setSpacing(4)
@@ -62,7 +84,7 @@ class LeftPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
-        layout.addWidget(self.select_folder_button)
+        layout.addLayout(library_controls_layout)
         layout.addWidget(self.library_tree, 1)
         layout.addWidget(self.user_label)
         layout.addLayout(account_layout)

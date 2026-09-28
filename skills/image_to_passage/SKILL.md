@@ -7,20 +7,19 @@ description: Use when English reading material is supplied as one or more textbo
 
 ## Purpose
 
-Convert one or more English reading images into StudyBench data files:
+Convert one or more English reading images into current StudyBench data files:
 
 - required `passage.json` for the Passage body;
-- optional `exercise.json` when supported exercises are present in the images.
+- optional `exercise.json` when one supported Exercise type is present.
 
 Use the images as the source of truth. Preserve the article and questions faithfully. Do not mix exercise text into the Passage body.
 
-This skill determines the Passage-level `tts_enabled` value and passes it to `../passage_segment/SKILL.md`. `tts_enabled` controls Passage TTS only. It never changes Paragraph recovery, Segment generation, SID allocation, or Vocabulary audio behavior.
+The current schema has no `tts_enabled` field. Complete Articles declare standard Segment audio paths; ArticleBlank Passages contain `[[n]]` placeholders and omit Segment `audio` completely.
 
 ## Input
 
 - one or more English reading images, in reading order;
 - optional explicit Passage title;
-- optional explicit `tts_enabled` boolean;
 - optional output Passage folder.
 
 When multiple images overlap, recognize the overlap and keep duplicated source text only once.
@@ -39,57 +38,53 @@ Read the article in normal reading order and keep only the English Passage body.
 
 Exclude material that is not part of the body, including:
 
-- exercise questions and answer options that are outside the Passage body;
+- exercise questions and answer options outside the Passage body;
 - page numbers, unit labels, running headers/footers, QR-code text, and similar textbook metadata;
 - decorative image text or captions that are not part of the Passage;
-- Chinese vocabulary glosses or annotations printed beside English words.
+- printed Chinese vocabulary glosses that are not part of the English body.
 
-Preserve spelling, capitalization, punctuation, numbers, quotation marks, word order, and genuine answer blanks that are part of the Passage body. Do not paraphrase or translate the English body.
+Preserve spelling, capitalization, punctuation, numbers, quotation marks, and word order. Do not paraphrase or translate the English body.
 
-Restore natural Paragraphs rather than copying visual line wrapping. Formatting-only line breaks inside one Paragraph become normal spaces. When a word is clearly split only because of a line-end hyphenation/layout break, restore the original whole word rather than preserving the artificial line break.
+Restore natural Paragraphs rather than copying visual line wrapping. Formatting-only line breaks inside one Paragraph become normal spaces. When a word is clearly split only because of line-end hyphenation/layout, restore the original whole word.
 
-## Determine `tts_enabled`
+## Recover Passage blanks
 
-Every generated `passage.json` must explicitly contain a boolean `tts_enabled`.
+If the Passage body itself contains genuine answer blanks, normalize those blanks to StudyBench placeholders in reading order:
 
-Use these rules in order:
+```text
+[[1]], [[2]], [[3]], ...
+```
 
-1. If the user explicitly supplies `tts_enabled`, use that value.
-2. Otherwise, set `tts_enabled: true` for an ordinary complete reading Passage whose body is meant to be read as continuous text.
-3. Set `tts_enabled: false` when the Passage body itself contains unresolved answer blanks or missing words that make Passage TTS inappropriate, such as a cloze-style or passage-level fill-in text.
-4. Separate exercises that appear after or beside an otherwise complete reading Passage do **not** by themselves disable Passage TTS. For example, an ordinary reading Passage may still use `tts_enabled: true` even when its `exercise.json` contains `choice` or `fill_blank` questions.
-5. If it is genuinely unclear whether Passage TTS is appropriate, prefer `false` rather than risking unwanted TTS generation.
+Use placeholders only for blanks that belong inside the Passage body. Do not insert placeholders for separate questions below or beside an otherwise complete Passage.
 
-Do not derive `tts_enabled` mechanically from an Exercise `type` string. Judge the Passage body itself.
+Each placeholder number must appear exactly once and numbering must be continuous from 1.
+
+After blank recovery, follow `../passage_segment/SKILL.md`:
+
+- no placeholders → complete Article with Segment audio paths;
+- placeholders present → ArticleBlank with no Segment `audio` properties.
 
 ## Create `passage.json`
-
-After the body and Paragraph boundaries are recovered, follow `../passage_segment/SKILL.md` for all Segment, SID, `next_sid`, `tts_enabled`, and Segment `audio` rules.
 
 For a newly created Passage:
 
 - SID starts at `s001` and increases in reading order across the entire Passage;
 - SIDs are lowercase and Passage-wide unique;
 - `next_sid` is one greater than the largest emitted SID number;
-- `tts_enabled` is always written explicitly;
-- when `tts_enabled` is `true`, every Segment declares:
-  - `audio/{sid}_uk.mp3`
-  - `audio/{sid}_us.mp3`;
-- when `tts_enabled` is `false`, every Segment still contains `audio`, but both `uk` and `us` are empty strings.
+- do not write `tts_enabled`.
 
-Example with Passage TTS enabled:
+Complete Article example:
 
 ```json
 {
   "title": "A concise Passage title",
-  "tts_enabled": true,
-  "next_sid": 3,
+  "next_sid": 2,
   "paragraphs": [
     {
       "paragraph": [
         {
           "sid": "s001",
-          "text": "First complete sentence.",
+          "text": "A complete sentence.",
           "audio": {
             "uk": "audio/s001_uk.mp3",
             "us": "audio/s001_us.mp3"
@@ -101,23 +96,18 @@ Example with Passage TTS enabled:
 }
 ```
 
-Example with Passage TTS disabled:
+ArticleBlank example:
 
 ```json
 {
-  "title": "A concise Passage title",
-  "tts_enabled": false,
+  "title": "A concise blank Passage title",
   "next_sid": 2,
   "paragraphs": [
     {
       "paragraph": [
         {
           "sid": "s001",
-          "text": "A Passage sentence with an unresolved ______ blank.",
-          "audio": {
-            "uk": "",
-            "us": ""
-          }
+          "text": "The sentence contains [[1]] blank."
         }
       ]
     }
@@ -125,79 +115,191 @@ Example with Passage TTS disabled:
 }
 ```
 
-The examples above are structural only. Actual text must come from the supplied images.
+The examples are structural only. Actual text must come from the supplied images.
 
 ## Detect and create Exercises
 
 After extracting the Passage, inspect the same images for exercises belonging to that Passage.
 
-If no supported exercise is present, create only `passage.json`.
+If no supported Exercise is present, create only `passage.json`.
 
-If supported exercises are present, create `exercise.json` beside `passage.json`. The current StudyBench program supports:
+The current StudyBench program supports exactly these Exercise types:
 
-- `choice`;
-- single-blank `fill_blank` using exactly one `______` in `prompt`.
+- `article_choice`
+- `article_answer`
+- `article_cloze`
+- `article_cloze_words`
+- `article_cloze_sentences`
 
-Do not emit an unsupported Exercise type merely because the source resembles it. If the source contains an exercise type that the current StudyBench schema does not support, preserve the Passage faithfully and omit that unsupported question data rather than inventing another schema.
+Do not emit legacy types such as `choice` or `fill_blank`.
 
-Question numbers are derived from array order and are not stored as IDs.
+`exercise.json` represents one Exercise family. Do not merge unrelated Exercise families into one file. If the source contains an unsupported Exercise form, preserve the Passage faithfully and omit that unsupported Exercise rather than inventing a schema.
 
-### Choice question
+All answerable units have an explicit integer `number`, a `reference_answer`, and an `explanation`. Do not store user-answer state in `exercise.json`.
+
+### `article_choice`
+
+Use for ordinary multiple-choice questions attached to a complete Article.
 
 ```json
 {
-  "type": "choice",
-  "prompt": "Question text?",
+  "type": "article_choice",
+  "questions": [
+    {
+      "number": 1,
+      "prompt": "Why did this happen?",
+      "options": [
+        {"key": "A", "text": "Option A"},
+        {"key": "B", "text": "Option B"}
+      ],
+      "reference_answer": "B",
+      "explanation": "A concise explanation based on the Passage."
+    }
+  ]
+}
+```
+
+Rules:
+
+- `questions` is non-empty;
+- `number` values are unique positive integers;
+- `prompt` is non-empty and must not contain `[[n]]`;
+- preserve visible option keys and texts in source order;
+- option keys are unique within a question;
+- `reference_answer` exactly matches one option key.
+
+### `article_answer`
+
+Use for free-response questions attached to a complete Article.
+
+```json
+{
+  "type": "article_answer",
+  "questions": [
+    {
+      "number": 1,
+      "prompt": "How was Helen's dress?",
+      "reference_answer": "It was a bit small.",
+      "explanation": "A concise explanation based on the Passage."
+    }
+  ]
+}
+```
+
+Rules:
+
+- `questions` is non-empty;
+- `number` values are unique positive integers;
+- `prompt` is non-empty and must not contain `[[n]]`;
+- `reference_answer` is a non-empty string.
+
+### `article_cloze`
+
+Use when the Passage body contains numbered blanks and each blank has its own multiple-choice option set.
+
+`passage.json` must be ArticleBlank and contain corresponding `[[n]]` placeholders.
+
+```json
+{
+  "type": "article_cloze",
+  "items": [
+    {
+      "number": 1,
+      "options": [
+        {"key": "A", "text": "watch"},
+        {"key": "B", "text": "help"}
+      ],
+      "reference_answer": "B",
+      "explanation": "A concise explanation based on context."
+    }
+  ]
+}
+```
+
+Rules:
+
+- `items` is non-empty;
+- every item number corresponds one-to-one with exactly one Passage placeholder;
+- each item has at least two options;
+- option keys are unique within the item;
+- `reference_answer` exactly matches one option key.
+
+### `article_cloze_words`
+
+Use when the Passage body contains numbered blanks completed by typing a word or phrase, optionally from a cue.
+
+```json
+{
+  "type": "article_cloze_words",
+  "items": [
+    {
+      "number": 1,
+      "cue": "bright",
+      "reference_answer": "brightly",
+      "explanation": "A concise explanation based on context."
+    }
+  ]
+}
+```
+
+Rules:
+
+- `items` is non-empty;
+- every item number corresponds one-to-one with exactly one Passage placeholder;
+- `cue` must always exist and must be a string; an empty string is allowed;
+- `reference_answer` is non-empty.
+
+### `article_cloze_sentences`
+
+Use when numbered Passage blanks are filled by choosing from one shared pool of complete sentence options.
+
+```json
+{
+  "type": "article_cloze_sentences",
   "options": [
-    {"key": "A", "text": "Option A"},
-    {"key": "B", "text": "Option B"}
+    {"key": "A", "text": "Sentence A."},
+    {"key": "B", "text": "Sentence B."}
   ],
-  "reference_answer": "B",
-  "explanation": "A concise explanation based on the Passage."
+  "items": [
+    {
+      "number": 1,
+      "reference_answer": "B",
+      "explanation": "A concise explanation based on context."
+    }
+  ]
 }
 ```
 
-Preserve the visible option keys and option text in source order. `reference_answer` must match one option key exactly.
+Rules:
 
-### Fill-blank question
+- `options` is a shared non-empty option pool with at least two options;
+- every option key is one uppercase character and keys are unique;
+- `items` is non-empty;
+- every item number corresponds one-to-one with exactly one Passage placeholder;
+- each `reference_answer` exactly matches one shared option key.
 
-```json
-{
-  "type": "fill_blank",
-  "prompt": "The sentence contains exactly one ______.",
-  "reference_answer": "answer",
-  "explanation": "A concise explanation based on the Passage."
-}
-```
+## Reference answers and explanations
 
-The full file is:
+If the source image prints an answer or explanation, preserve it faithfully unless the user explicitly asks for correction.
 
-```json
-{
-  "questions": []
-}
-```
+If the source does not print them, derive `reference_answer` and a concise `explanation` from the recognized Passage and question only when the answer is supported by the source. Do not invent unsupported facts.
 
-with recognized supported questions appended in the same order as the source.
-
-When the source image does not print the answer or explanation, derive `reference_answer` and a concise `explanation` from the recognized Passage and question. Base them on Passage evidence; do not invent unsupported facts. `exercise.json` contains textbook question data only; never add `answer`, `user_answer`, `user_note`, `username`, or `userdata` fields.
+`exercise.json` contains textbook Exercise data only. Never add `answer`, `user_answer`, `user_note`, `username`, `userdata`, `correct`, or other user-state fields.
 
 ## Final validation
 
-Before returning or writing files, verify in this order:
+Before returning or writing files, verify:
 
 1. article text and exercise text are separated correctly;
 2. Paragraph order matches the source;
 3. `passage.json` satisfies `../passage_segment/SKILL.md`;
-4. `tts_enabled` exists and is a JSON boolean;
-5. `tts_enabled` reflects the Passage body rather than being mechanically inferred from Exercise question types;
-6. all SIDs are unique and lowercase;
-7. `next_sid` is correct;
-8. when `tts_enabled` is `true`, Segment audio paths exactly match their SIDs;
-9. when `tts_enabled` is `false`, every Segment has `audio.uk == ""` and `audio.us == ""`;
-10. `exercise.json`, when present, contains supported questions in source order;
-11. every choice option key is unique within its question;
-12. every choice `reference_answer` matches an option key;
-13. every fill-blank `prompt` has exactly one `______`;
-14. no Question contains `answer`, `user_answer`, `user_note`, `username`, or `userdata`;
-15. all output files are valid JSON with no Markdown wrappers or comments.
+4. there is no `tts_enabled` property;
+5. all SIDs are unique and lowercase and `next_sid` is correct;
+6. complete Articles have exact SID-matching audio paths and no placeholders;
+7. ArticleBlank Passages have continuous unique `[[1]]..[[N]]` placeholders and no Segment contains `audio`;
+8. `exercise.json`, when present, uses one of the five current `article_*` types;
+9. all answerable units have unique positive integer `number` values;
+10. every `reference_answer` is valid for its Exercise type;
+11. for all three cloze families, item numbers match Passage placeholder numbers exactly;
+12. no Exercise object contains user-answer state;
+13. all output files are valid JSON with no Markdown wrappers or comments.
