@@ -16,7 +16,10 @@ def audio_stem(word):
 
 
 class WordCell:
-    """A Word plus its UK/US audio paths and UI-neutral render description."""
+    """A Word plus its UK/US audio paths.
+
+    WordCell is deliberately UI-free. Rendering belongs to vocabulary.ui.
+    """
 
     def __init__(self, word, audio_uk="", audio_us=""):
         if not isinstance(word, Word):
@@ -47,55 +50,3 @@ class WordCell:
         if accent == "us":
             return self.audio_us
         raise ValueError(f"Unsupported vocabulary accent: {accent}")
-
-    def build_render_payload(self, word_color="#3271ae", layout="default"):
-        """Describe how this cell is laid out without creating GUI widgets.
-
-        ``rows`` is deliberately explicit: a caller can render the same cell
-        with Qt, a web view, or another UI toolkit while preserving which
-        properties belong on each visual line. Speaker controls are represented
-        by their accent and target audio path rather than by toolkit objects.
-        """
-
-        if layout != "default":
-            raise ValueError(f"Unsupported WordCell layout: {layout}")
-        if not isinstance(word_color, str) or not word_color:
-            raise ValueError("word_color must be a non-empty string")
-
-        rows = [
-            {
-                "type": "word",
-                "text": self.word.word,
-                "bold": True,
-                "color": word_color,
-            },
-            {
-                "type": "phonetics",
-                "items": [
-                    {
-                        "accent": "uk",
-                        "text": self.word.phonetic_uk,
-                        "audio_path": self.audio_uk,
-                    },
-                    {
-                        "accent": "us",
-                        "text": self.word.phonetic_us,
-                        "audio_path": self.audio_us,
-                    },
-                ],
-            },
-        ]
-        rows.extend(
-            {
-                "type": "meaning",
-                "pos": item["pos"],
-                "meaning": item["meaning"],
-            }
-            for item in self.word.meanings
-        )
-
-        return {
-            "layout": "default",
-            "word_text": self.word.word,
-            "rows": rows,
-        }

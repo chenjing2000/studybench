@@ -1,21 +1,7 @@
 import re
-from pathlib import Path
-
-from ..json_store import read_json
-
 
 SID_PATTERN = re.compile(r"^s(\d{3})$")
 PLACEHOLDER_PATTERN = re.compile(r"\[\[(\d+)\]\]")
-
-
-def load_required_json(path, label):
-    path = Path(path)
-    if not path.exists() or not path.is_file():
-        raise ValueError(f"缺少 {label}。")
-    try:
-        return read_json(path)
-    except Exception as error:
-        raise ValueError(f"{label} 无法读取：{error}") from None
 
 
 def validate_title(data):

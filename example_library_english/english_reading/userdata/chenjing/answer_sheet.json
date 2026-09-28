@@ -1,0 +1,18 @@
+{
+  "username": "chenjing",
+  "answers": {
+    "human_origins": {
+      "type": "article_choice",
+      "answers": [
+        {
+          "number": 1,
+          "answer": "B"
+        },
+        {
+          "number": 2,
+          "answer": "C"
+        }
+      ]
+    }
+  }
+}

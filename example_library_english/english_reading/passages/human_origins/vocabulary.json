@@ -1,0 +1,64 @@
+{
+  "words": [
+    {
+      "word": "origin",
+      "phonetic_uk": "/ˈɒrɪdʒɪn/",
+      "phonetic_us": "/ˈɔːrɪdʒɪn/",
+      "meanings": [
+        {
+          "pos": "n.",
+          "meaning": "起源；来源"
+        }
+      ],
+      "audio": {
+        "uk": "audio_vocabulary/origin_uk.mp3",
+        "us": "audio_vocabulary/origin_us.mp3"
+      }
+    },
+    {
+      "word": "evidence",
+      "phonetic_uk": "/ˈevɪdəns/",
+      "phonetic_us": "/ˈevɪdəns/",
+      "meanings": [
+        {
+          "pos": "n.",
+          "meaning": "证据；根据"
+        }
+      ],
+      "audio": {
+        "uk": "audio_vocabulary/evidence_uk.mp3",
+        "us": "audio_vocabulary/evidence_us.mp3"
+      }
+    },
+    {
+      "word": "genetic",
+      "phonetic_uk": "",
+      "phonetic_us": "",
+      "meanings": [],
+      "audio": {
+        "uk": "audio_vocabulary/genetic_uk.mp3",
+        "us": "audio_vocabulary/genetic_us.mp3"
+      }
+    },
+    {
+      "word": "ancient",
+      "phonetic_uk": "",
+      "phonetic_us": "",
+      "meanings": [],
+      "audio": {
+        "uk": "audio_vocabulary/ancient_uk.mp3",
+        "us": "audio_vocabulary/ancient_us.mp3"
+      }
+    },
+    {
+      "word": "curious",
+      "phonetic_uk": "",
+      "phonetic_us": "",
+      "meanings": [],
+      "audio": {
+        "uk": "audio_vocabulary/curious_uk.mp3",
+        "us": "audio_vocabulary/curious_us.mp3"
+      }
+    }
+  ]
+}

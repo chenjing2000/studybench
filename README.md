@@ -10,7 +10,7 @@ StudyBench is an offline English intensive-reading bench built with PySide6.
 - Right panel: native Qt Vocabulary widgets
 - Python ↔ page: `QWebChannel`
 - Audio playback: one global `QMediaPlayer` + `QAudioOutput`
-- Audio generation: integrated MDX/MDD + Edge-TTS extractor
+- Audio generation: `program/audio_generator/` with independent TTS and MDICT providers
 - Persistence: JSON + filesystem only
 - Environment: `uv`
 - Entry point: root `main.py`
@@ -21,43 +21,77 @@ uv run python main.py
 uv run pytest
 ```
 
-## V0.7.0 core architecture
+## V0.10.0 architecture
 
-V0.7.0 keeps the V0.6.0 Article architecture and adds a second decoupled core module for Vocabulary. Passage behavior is still defined by the Article class family rather than a `tts_enabled` field. StudyBench has two independent base Article families under `studybench/article_classes/`:
-
-```text
-Article
-├── ArticleChoice
-└── ArticleAnswer
-
-ArticleBlank
-├── ArticleCloze
-├── ArticleClozeWords
-└── ArticleClozeSentences
-```
-
-`Article` represents a complete readable Passage and owns Passage Audio/TTS capabilities. `ArticleBlank` represents a Passage containing `[[n]]` answer blanks and deliberately has no Passage Audio/TTS methods.
-
-The module is physically separated from the main window:
+V0.10.0 completes the Data/Application cleanup begun in V0.8/V0.9. The former `EnglishData` compatibility object is gone. Persistent resources now have explicit owners, application state is private/read-only from the outside, Passage/Library switching is prepared before it is committed, and UI code no longer reaches into Application locks or mutable Vocabulary state.
 
 ```text
 studybench/
-├── main_window.py
-├── audio_config.py
-├── english_data.py
-└── article_classes/
-    ├── factory.py
-    ├── utils.py
-    ├── base_article_classes/
-    │   ├── article.py
-    │   └── article_blank.py
-    └── extended_article_classes/
-        ├── article_choice.py
-        ├── article_answer.py
-        ├── article_cloze.py
-        ├── article_cloze_words.py
-        └── article_cloze_sentences.py
+├── data/
+│   ├── article_repository.py
+│   ├── library_repository.py
+│   └── user_data_repository.py
+├── article_classes/
+│   ├── factory.py
+│   ├── base_article_classes/
+│   └── extended_article_classes/
+├── vocabulary/
+│   ├── word.py
+│   ├── word_cell.py
+│   ├── vocabulary.py
+│   ├── vocabulary_io.py
+│   └── ui/
+│       ├── word_cell_ui.py
+│       ├── vocabulary_presenter.py
+│       ├── vocabulary_entry_widget.py
+│       └── vocabulary_panel.py
+├── program/
+│   ├── application/
+│   │   ├── library_application.py
+│   │   ├── account_application.py
+│   │   ├── article_application.py
+│   │   ├── vocabulary_application.py
+│   │   ├── ports.py
+│   │   └── workspace_coordinator.py
+│   ├── audio_generator/
+│   │   ├── passage_generator.py
+│   │   ├── vocabulary_generator.py
+│   │   ├── tts/
+│   │   └── mdict/
+│   └── ui/
+│       ├── audio_playback.py
+│       ├── audio_task_runner.py
+│       ├── window_state.py
+│       ├── main_window_ui.py
+│       ├── left_panel.py
+│       ├── center_panel.py
+│       └── right_panel.py
+└── main_window.py
 ```
+
+### Persistence ownership
+
+Each persistent resource has one authoritative owner:
+
+- `book.json` → `LibraryRepository`
+- `passage.json` / `exercise.json` → `ArticleRepository`
+- `userdata/<user>/answer_sheet.json` → `UserDataRepository`
+- `vocabulary.json` → `VocabularyIO`
+- `audio_config.json` → `program/audio_generator/config.py`
+- generated MP3 files → the Audio Generator
+- window settings → `program/ui/window_state.py`
+
+`ArticleRepository` reads Article files and passes already-loaded data to the pure Article factory. Article domain classes do not read JSON themselves and do not build UI payloads. `LibraryRepository` reads only the Passage summary needed for navigation, so a malformed `exercise.json` does not hide the Book from the left tree; the full Article is validated when that Passage is opened.
+
+### State and transaction boundaries
+
+The four Application objects are the unique owners of their current state. Their internal current values are private and exposed read-only or as snapshots. `VocabularyApplication.snapshot()` returns a detached Vocabulary, so UI presentation never holds the Application lock or mutates the live Vocabulary. Vocabulary audio jobs use a monotonic revision to avoid merging stale results over newer user edits.
+
+Workspace switching follows a prepare-then-commit rule. A corrupt Passage cannot leave the Library pointing at one Passage while Article/Vocabulary still represent another, and a failed Library load does not clear the existing workspace. Cross-Application operations stay in `WorkspaceCoordinator`; single-Application operations do not. `WorkspaceUpdate` carries explicit change flags and typed application messages to the Qt shell.
+
+Qt playback and background execution remain adapters in `program/ui/`. Application code talks to playback through the small `AudioPlaybackPort` protocol and never imports PySide6. `AudioTaskRunner` owns the single audio-generation running state.
+
+The bundled demonstration Library is `example_library_english/` at the project root. It is data, not a Python package.
 
 ## Passage data
 
@@ -221,30 +255,23 @@ For the three `ArticleBlank` exercise types, `items[].number` must match the Pas
 
 ## Factory and fallback
 
-`article_classes/factory.py` is the single Article creation entry point.
+`ArticleRepository` owns `passage.json` / `exercise.json` reading. It passes already-loaded objects to the persistence-free `article_classes/factory.py`, which is the single Article construction entry point.
 
 - supported `exercise.type` → instantiate the matching extended class and validate strictly;
 - no `exercise.json`, no `[[n]]` → `Article`;
 - no `exercise.json`, with `[[n]]` → `ArticleBlank`;
 - unsupported exercise type → fall back by the same placeholder rule and report a non-blocking warning;
-- malformed JSON or invalid data for a supported type → error, never silent fallback.
+- malformed JSON is rejected by the Repository; invalid data for a supported type is rejected by the Domain/Factory, never silently downgraded.
 
 ## Rendering
 
-The center page has two Passage renderers:
+Article-specific UI is described by seven UI-neutral feature builders. `ArticleUI` and `ArticleBlankUI` define the two Passage presentation families; the five extended UI builders add their Exercise components without duplicating Passage rendering.
 
-- `Article`: paragraph play buttons, Segment audio hover/right-click, `Gen Audio`, British/American switch, Read All, Stop;
-- `ArticleBlank`: no Passage Audio controls or hover; `[[n]]` is rendered as a numbered blank.
+The builders emit a small component view-model contract (`title`, `paragraph`, `segment`, `blank`, `passage_audio_controls`, `question`, `radio_group`, `textbox`, `cue`, `option_pool`, etc.). `program/ui/article_ui_registry.py` maps an Article object to the correct builder.
 
-Exercise rendering is kept in `studybench/web/exercise.js` and is separate from Passage rendering:
+The actual center widget is `program/ui/center_panel.py`. It hosts `QWebEngineView` and sends the feature view model to `program/ui/web/runtime.js`. The JavaScript runtime renders generic components and does not reinterpret `exercise.json` by Article type. `center_web_bridge.py` is protocol-only: JavaScript actions become Qt signals and contain no Article/Vocabulary persistence logic.
 
-- `ArticleChoice`: vertical RadioButton choices;
-- `ArticleAnswer`: expandable textboxes;
-- `ArticleCloze`: one horizontal RadioButton row per blank;
-- `ArticleClozeWords`: `number + cue + textbox`;
-- `ArticleClozeSentences`: shared sentence option list followed by numbered short textboxes.
-
-Vocabulary selection/highlighting works in both Passage families.
+Vocabulary selection/highlighting remains a cross-feature StudyBench behavior in the program/web layer rather than the Vocabulary domain.
 
 ## Answer sheet
 
@@ -271,47 +298,34 @@ Answer edits are automatically saved after a short debounce. Leaving the current
 
 ## Vocabulary module
 
-Vocabulary management is decoupled from `MainWindow`, `EnglishData`, and the Article hierarchy. The reusable core lives under `studybench/vocabulary/`:
-
-```text
-studybench/
-├── article_classes/
-├── vocabulary/
-│   ├── word.py
-│   ├── word_cell.py
-│   ├── vocabulary.py
-│   ├── vocabulary_io.py
-│   ├── vocabulary_presenter.py
-│   └── vocabulary_audio_service.py
-├── main_window.py
-└── widgets/
-    └── vocabulary_panel.py
-```
-
-The responsibilities are intentionally separated:
+The Vocabulary domain remains reusable and UI-free:
 
 - `Word`: spelling, UK/US phonetics, and the existing plain `meanings` list. There is no `WordMeaning` class.
-- `WordCell`: composition wrapper around one `Word`, plus UK/US audio paths and a UI-neutral render payload whose explicit `rows` describe the word, UK/US phonetics/speaker targets, and meaning lines.
-- `Vocabulary`: ordered `WordCell` collection only; add/remove/find/reorder/replace operations live here.
-- `VocabularyIO`: strict `vocabulary.json` loading/saving and the existing audio-path validation rules.
-- `VocabularyPresenter`: list presentation data such as alternating row backgrounds and per-cell render payloads.
-- `VocabularyAudioService`: MDX/MDD → dictionary audio → Edge-TTS fallback; it updates the in-memory Vocabulary but does not own the real `vocabulary.json` persistence.
+- `WordCell`: composition wrapper around one `Word` plus UK/US audio paths; it contains no color/layout/render methods.
+- `Vocabulary`: ordered `WordCell` collection only.
+- `VocabularyIO`: strict `vocabulary.json` loading/saving.
+- Vocabulary audio generation is coordinated by `VocabularyApplication` and `program/audio_generator/VocabularyGenerator`; the core Vocabulary package has no audio-generation service.
 
-The right-side `VocabularyPanel` remains a PySide6 application view outside the reusable module. It consumes presenter payloads and emits user actions. Passage-word matching and show/hide highlighting also remain outside `studybench/vocabulary/`; they stay in the StudyBench application/web bridge layer.
+Presentation now lives in `studybench/vocabulary/ui/`:
 
-The external `vocabulary.json` schema is unchanged and remains flat for easy manual editing. The right panel still keeps export/import at the top and an equal-width bottom row:
+- `WordCellUI`: builds the single-word view model (bold/colorized word, phonetics and speaker targets, meanings).
+- `VocabularyPresenter`: adds ordered-list presentation such as alternating row backgrounds and move availability.
+- `VocabularyEntryWidget`: one rendered word row and its row-level controls.
+- `VocabularyPanel`: the PySide6 list/header/footer shell.
 
-```text
-[ show / hide ] [ gen words audio ]
-```
+`studybench/vocabulary/__init__.py` does not import the UI package, so importing the core Vocabulary module does not require PySide6. Passage matching/highlighting stays outside the Vocabulary module.
 
-`gen words audio` continues to write under `audio_vocabulary/`.
+The external `vocabulary.json` schema remains unchanged and flat for manual editing.
 
-## Passage audio
+## Audio generation
 
-Only the `Article` family supports Passage audio generation. The center `Gen Audio` pipeline creates missing `audio/{sid}_uk.mp3` and `audio/{sid}_us.mp3` files. `ArticleBlank` has no Passage audio methods and cannot invoke Passage TTS.
+`program/audio_generator/` contains no PySide6 code. `PassageGenerator` uses only the configured TTS provider. `VocabularyGenerator` first queries the MDICT provider for phonetics and dictionary audio, then uses the TTS provider only for missing UK/US audio.
 
-Passage Audio and Vocabulary Audio remain independent pipelines and only one generation job may run at a time.
+Only the `Article` family supports Passage audio generation. `Article` keeps audio-path lookup methods, but it no longer has a `generate_passage_audio()` infrastructure method. `ArticleApplication` prepares the request and invokes `PassageGenerator`. `ArticleBlank` cannot enter the Passage-TTS workflow.
+
+Vocabulary generation returns explicit phonetic updates. `VocabularyApplication` merges them into the latest Vocabulary state and persists with `VocabularyIO`, so generation never writes a stale temporary `vocabulary.json` snapshot back over user changes.
+
+Qt-specific playback lives in `program/ui/audio_playback.py`, while background execution lives in `program/ui/audio_task_runner.py`. Playback is deliberately separate from generation. Passage Audio and Vocabulary Audio remain independent pipelines and only one generation job may run at a time.
 
 ## Accounts
 
@@ -325,6 +339,6 @@ The package still contains:
 - `skills/image_to_passage/SKILL.md`
 - `skills/vocabulary_enrichment/SKILL.md`
 
-The skills remain packaged separately from the V0.7.0 Vocabulary-module refactor; this release does not change their data rules.
+The skills remain packaged separately from the V0.10.0 Data/Application refactor; this release does not change their data rules.
 
-Detailed program rules are in `docs/English_Module_V0.5_Specification.md`, `docs/Audio_Generation_V0.4_Specification.md`, and `docs/Vocabulary_Module_V0.7_Specification.md`.
+Detailed program rules are in `docs/English_Module_V0.5_Specification.md`, `docs/Vocabulary_Module_V0.8_Specification.md`, `docs/UI_Application_V0.8_Specification.md`, `docs/Audio_Generator_V0.9_Specification.md`, and `docs/Data_Application_V0.10_Specification.md`.

@@ -1,18 +1,13 @@
 from pathlib import Path
 
-from ..utils import load_required_json, validate_base_passage
+from ..utils import validate_base_passage
 
 
 class Article:
     article_family = "article"
 
-    def __init__(self, passage_dir, passage_data=None):
+    def __init__(self, passage_dir, passage_data):
         self.passage_dir = Path(passage_dir)
-        if passage_data is None:
-            passage_data = load_required_json(
-                self.passage_dir / "passage.json",
-                "passage.json",
-            )
         validated = validate_base_passage(
             passage_data,
             allow_audio=True,
@@ -26,29 +21,6 @@ class Article:
     @property
     def has_exercise(self):
         return False
-
-    def build_passage_payload(self):
-        rendered = []
-        for paragraph in self.paragraphs:
-            rendered.append(
-                {
-                    "segments": [
-                        {"sid": segment["sid"], "text": segment["text"]}
-                        for segment in paragraph
-                    ]
-                }
-            )
-        return {"title": self.title, "paragraphs": rendered}
-
-    def generate_passage_audio(self, config):
-        from studybench_audio_extractor import run_passage_audio
-
-        return run_passage_audio(
-            root_dir=self.passage_dir,
-            uk_voice=config["uk_voice"],
-            us_voice=config["us_voice"],
-            wait_seconds=config["wait_seconds"],
-        )
 
     def get_segment_audio_path(self, sid, accent):
         self._validate_accent(accent)

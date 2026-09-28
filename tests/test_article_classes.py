@@ -11,8 +11,8 @@ from studybench.article_classes import (
     ArticleCloze,
     ArticleClozeSentences,
     ArticleClozeWords,
-    load_article,
 )
+from studybench.data import ArticleRepository
 
 
 def write_json(path, data):
@@ -104,7 +104,7 @@ def test_article_choice_schema_and_answers(tmp_path):
         ],
     }
     obj = ArticleChoice(tmp_path, article_passage(), exercise)
-    assert obj.build_exercise_payload()["type"] == "article_choice"
+    assert obj.exercise["type"] == "article_choice"
     assert obj.normalize_answers({"type": "article_choice", "answers": [{"number": 1, "answer": "B"}]}) == [
         {"number": 1, "answer": "B"}
     ]
@@ -181,7 +181,7 @@ def test_article_cloze_words_requires_cue_and_alignment(tmp_path):
         ],
     }
     obj = ArticleClozeWords(tmp_path, blank_passage(), exercise)
-    assert obj.build_exercise_payload()["items"][0]["cue"] == "bright"
+    assert obj.exercise["items"][0]["cue"] == "bright"
     bad = json.loads(json.dumps(exercise))
     del bad["items"][0]["cue"]
     with pytest.raises(ValueError, match="cue"):
@@ -215,7 +215,7 @@ def test_factory_selects_known_types(tmp_path):
             ],
         },
     )
-    loaded = load_article(passage_dir)
+    loaded = ArticleRepository().load(passage_dir)
     assert isinstance(loaded.article, ArticleAnswer)
     assert loaded.has_exercise is True
     assert loaded.warning is None
@@ -224,13 +224,13 @@ def test_factory_selects_known_types(tmp_path):
 def test_factory_fallbacks_by_placeholders(tmp_path):
     plain = tmp_path / "plain"
     write_json(plain / "passage.json", article_passage())
-    loaded = load_article(plain)
+    loaded = ArticleRepository().load(plain)
     assert type(loaded.article) is Article
     assert loaded.has_exercise is False
 
     blank = tmp_path / "blank"
     write_json(blank / "passage.json", blank_passage())
-    loaded = load_article(blank)
+    loaded = ArticleRepository().load(blank)
     assert type(loaded.article) is ArticleBlank
     assert loaded.has_exercise is False
 
@@ -239,7 +239,7 @@ def test_factory_unknown_exercise_type_falls_back_with_warning(tmp_path):
     plain = tmp_path / "plain"
     write_json(plain / "passage.json", article_passage())
     write_json(plain / "exercise.json", {"type": "article_matching"})
-    loaded = load_article(plain)
+    loaded = ArticleRepository().load(plain)
     assert type(loaded.article) is Article
     assert loaded.has_exercise is False
     assert "Unsupported exercise type" in loaded.warning
@@ -247,7 +247,7 @@ def test_factory_unknown_exercise_type_falls_back_with_warning(tmp_path):
     blank = tmp_path / "blank"
     write_json(blank / "passage.json", blank_passage())
     write_json(blank / "exercise.json", {"type": "article_matching"})
-    loaded = load_article(blank)
+    loaded = ArticleRepository().load(blank)
     assert type(loaded.article) is ArticleBlank
 
 
@@ -256,7 +256,7 @@ def test_factory_known_type_schema_error_does_not_fallback(tmp_path):
     write_json(passage_dir / "passage.json", article_passage())
     write_json(passage_dir / "exercise.json", {"type": "article_choice", "questions": []})
     with pytest.raises(ValueError, match="questions"):
-        load_article(passage_dir)
+        ArticleRepository().load(passage_dir)
 
 
 def test_factory_corrupt_exercise_is_error(tmp_path):
@@ -264,4 +264,4 @@ def test_factory_corrupt_exercise_is_error(tmp_path):
     write_json(passage_dir / "passage.json", article_passage())
     (passage_dir / "exercise.json").write_text('{"type": ', encoding="utf-8")
     with pytest.raises(ValueError, match="exercise.json 无法读取"):
-        load_article(passage_dir)
+        ArticleRepository().load(passage_dir)

@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..json_store import read_json
 from .base_article_classes import Article, ArticleBlank
 from .extended_article_classes import (
     ArticleAnswer,
@@ -10,7 +9,7 @@ from .extended_article_classes import (
     ArticleClozeSentences,
     ArticleClozeWords,
 )
-from .utils import load_required_json, passage_has_placeholders
+from .utils import passage_has_placeholders
 
 
 TYPE_CLASS_MAP = {
@@ -29,25 +28,20 @@ class LoadedArticle:
     warning: str | None = None
 
 
-def load_article(passage_dir):
-    passage_dir = Path(passage_dir)
-    passage_data = load_required_json(passage_dir / "passage.json", "passage.json")
-    exercise_path = passage_dir / "exercise.json"
+def build_article(passage_dir, passage_data, exercise_data=None):
+    """Pure Article factory.
 
-    if not exercise_path.exists():
+    Persistence is intentionally outside the Article domain. Callers provide
+    already-read passage/exercise data.
+    """
+
+    passage_dir = Path(passage_dir)
+    if exercise_data is None:
         article_class = ArticleBlank if passage_has_placeholders(passage_data) else Article
         return LoadedArticle(
             article=article_class(passage_dir, passage_data),
             has_exercise=False,
         )
-
-    if not exercise_path.is_file():
-        raise ValueError("exercise.json 不是普通文件。")
-
-    try:
-        exercise_data = read_json(exercise_path)
-    except Exception as error:
-        raise ValueError(f"exercise.json 无法读取：{error}") from None
 
     if not isinstance(exercise_data, dict):
         raise ValueError("exercise.json 必须是 JSON object。")

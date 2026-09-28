@@ -6,7 +6,7 @@ from .extended_article_classes import (
     ArticleClozeSentences,
     ArticleClozeWords,
 )
-from .factory import LoadedArticle, load_article
+from .factory import LoadedArticle, build_article
 
 __all__ = [
     "Article",
@@ -17,5 +17,5 @@ __all__ = [
     "ArticleClozeWords",
     "ArticleClozeSentences",
     "LoadedArticle",
-    "load_article",
+    "build_article",
 ]

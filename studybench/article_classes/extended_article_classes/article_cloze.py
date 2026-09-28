@@ -12,7 +12,7 @@ from ..utils import (
 class ArticleCloze(ArticleBlank):
     exercise_type = "article_cloze"
 
-    def __init__(self, passage_dir, passage_data=None, exercise_data=None):
+    def __init__(self, passage_dir, passage_data, exercise_data):
         super().__init__(passage_dir, passage_data)
         self.exercise = self._validate_exercise(exercise_data)
 
@@ -50,9 +50,6 @@ class ArticleCloze(ArticleBlank):
                 }
             )
         return {"type": self.exercise_type, "items": result}
-
-    def build_exercise_payload(self):
-        return self.exercise
 
     def answer_numbers(self):
         return [item["number"] for item in self.exercise["items"]]

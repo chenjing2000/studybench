@@ -3,13 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from studybench.vocabulary import (
-    Vocabulary,
-    VocabularyIO,
-    VocabularyPresenter,
-    Word,
-    WordCell,
-)
+from studybench.vocabulary import Vocabulary, VocabularyIO, Word, WordCell
+from studybench.vocabulary.ui import VocabularyPresenter, WordCellUI
 
 
 def make_cell(text, *, uk="", us="", meanings=None):
@@ -32,14 +27,15 @@ def test_word_keeps_meanings_as_plain_list():
     assert all(isinstance(item, dict) for item in word.meanings)
 
 
-def test_word_cell_wraps_word_and_builds_ui_neutral_payload():
+def test_word_cell_wraps_word_and_ui_builder_builds_payload():
     cell = make_cell(
         "balance",
         uk="/ˈbæləns/",
         us="/ˈbæləns/",
         meanings=[{"pos": "n.", "meaning": "平衡"}],
     )
-    payload = cell.build_render_payload(word_color="#123456")
+    assert not hasattr(cell, "build_render_payload")
+    payload = WordCellUI().build_view_model(cell, word_color="#123456")
     assert payload["word_text"] == "balance"
     assert payload["rows"][0] == {
         "type": "word",
@@ -51,9 +47,8 @@ def test_word_cell_wraps_word_and_builds_ui_neutral_payload():
     assert payload["rows"][1]["items"][0] == {
         "accent": "uk",
         "text": "/ˈbæləns/",
-        "audio_path": "audio_vocabulary/balance_uk.mp3",
     }
-    assert payload["rows"][1]["items"][1]["audio_path"] == "audio_vocabulary/balance_us.mp3"
+    assert payload["rows"][1]["items"][1] == {"accent": "us", "text": "/ˈbæləns/"}
     assert payload["rows"][2] == {
         "type": "meaning",
         "pos": "n.",
@@ -144,32 +139,3 @@ def test_vocabulary_io_keeps_strict_audio_path_validation(tmp_path):
     )
     with pytest.raises(ValueError, match="uk 音频路径"):
         VocabularyIO.load(path)
-
-
-def test_merge_phonetic_updates_preserves_latest_list_changes(tmp_path):
-    path = tmp_path / "vocabulary.json"
-    latest = Vocabulary([make_cell("beta"), make_cell("alpha"), make_cell("new")])
-    VocabularyIO.save(latest, path)
-
-    updates = {
-        "alpha": {"phonetic_uk": "/a-uk/", "phonetic_us": "/a-us/"}
-    }
-    merged = VocabularyIO.merge_phonetic_updates(updates, path)
-
-    assert merged.word_texts() == ["beta", "alpha", "new"]
-    assert merged.find("alpha").word.phonetic_uk == "/a-uk/"
-    assert merged.find("alpha").word.phonetic_us == "/a-us/"
-    assert VocabularyIO.load(path).word_texts() == ["beta", "alpha", "new"]
-
-
-def test_phonetic_merge_does_not_overwrite_newer_concurrent_value(tmp_path):
-    path = tmp_path / "vocabulary.json"
-    latest = Vocabulary([make_cell("alpha", uk="/manual/", us="")])
-    VocabularyIO.save(latest, path)
-
-    updates = {"alpha": {"phonetic_uk": "/dictionary/", "phonetic_us": "/us/"}}
-    expected = {"alpha": {"phonetic_uk": "", "phonetic_us": ""}}
-    merged = VocabularyIO.merge_phonetic_updates(updates, path, expected=expected)
-
-    assert merged.find("alpha").word.phonetic_uk == "/manual/"
-    assert merged.find("alpha").word.phonetic_us == "/us/"
