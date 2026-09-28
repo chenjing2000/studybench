@@ -43,7 +43,7 @@ class LeftPanel(QWidget):
         self.library_tree = LibraryTree()
         self.library_tree.passage_selected.connect(self.passage_selected.emit)
 
-        self.user_label = QLabel("User: Default User")
+        self.user_label = QLabel("User: xiaoxin")
         label_font = self.user_label.font()
         label_font.setPointSize(10)
         label_font.setBold(False)

@@ -251,17 +251,31 @@ def test_factory_unknown_exercise_type_falls_back_with_warning(tmp_path):
     assert type(loaded.article) is ArticleBlank
 
 
-def test_factory_known_type_schema_error_does_not_fallback(tmp_path):
+def test_factory_known_type_schema_error_falls_back_with_warning(tmp_path):
     passage_dir = tmp_path / "p"
     write_json(passage_dir / "passage.json", article_passage())
     write_json(passage_dir / "exercise.json", {"type": "article_choice", "questions": []})
-    with pytest.raises(ValueError, match="questions"):
-        ArticleRepository().load(passage_dir)
+    loaded = ArticleRepository().load(passage_dir)
+    assert type(loaded.article) is Article
+    assert loaded.has_exercise is False
+    assert "exercise.json 无法加载" in loaded.warning
+    assert "questions" in loaded.warning
 
 
-def test_factory_corrupt_exercise_is_error(tmp_path):
+def test_factory_corrupt_exercise_falls_back_with_warning(tmp_path):
     passage_dir = tmp_path / "p"
     write_json(passage_dir / "passage.json", article_passage())
     (passage_dir / "exercise.json").write_text('{"type": ', encoding="utf-8")
-    with pytest.raises(ValueError, match="exercise.json 无法读取"):
+    loaded = ArticleRepository().load(passage_dir)
+    assert type(loaded.article) is Article
+    assert loaded.has_exercise is False
+    assert "exercise.json 无法读取" in loaded.warning
+
+
+def test_factory_corrupt_passage_still_fails(tmp_path):
+    passage_dir = tmp_path / "p"
+    passage_dir.mkdir()
+    (passage_dir / "passage.json").write_text('{"title": ', encoding="utf-8")
+    write_json(passage_dir / "exercise.json", {"type": "article_choice", "questions": []})
+    with pytest.raises(ValueError, match="passage.json 无法读取"):
         ArticleRepository().load(passage_dir)

@@ -47,8 +47,8 @@ class SettingsDialog(QDialog):
 
         buttons = QHBoxLayout()
         buttons.addStretch(1)
-        buttons.addWidget(self.cancel_button)
         buttons.addWidget(self.save_button)
+        buttons.addWidget(self.cancel_button)
 
         layout = QVBoxLayout(self)
         layout.addWidget(tabs, 1)

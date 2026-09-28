@@ -59,7 +59,9 @@ class MainWindow(QMainWindow):
 
         self.article_repository = ArticleRepository()
         self.user_data_repository = UserDataRepository()
-        self.library_repository = LibraryRepository(self.article_repository)
+        self.library_repository = LibraryRepository(
+            self.article_repository, self.user_data_repository
+        )
         self.audio_player = AudioPlayback(self)
         self.tts_provider = EdgeTTSProvider()
         self.library_application = LibraryApplication(self.library_repository)
@@ -305,7 +307,7 @@ class MainWindow(QMainWindow):
             return
         self._apply_workspace_update(update)
         self._queue_status_messages(update.messages)
-        self.show_status("已切换到 Default User。")
+        self.show_status("已切换到 xiaoxin。")
 
     def _refresh_account_controls(self):
         has_book = bool(self.library_application.current_book)

@@ -21,9 +21,13 @@ uv run python main.py
 uv run pytest
 ```
 
-## V0.12.7 architecture
+## V0.12.9 architecture
 
-V0.12.7 is a cleanup release on top of the V0.12 architecture. It aligns the bundled Passage-generation Skills with the current `Article` / `ArticleBlank` and five `article_*` Exercise schemas, removes confirmed dead APIs/imports, and stops `LibraryRepository` from rewriting an already-normal `book.json` merely while reading user references. The native main-window maximize behavior from V0.12.6 is retained.
+V0.12.9 is a cleanup release: Exercise presentation is owned by `page.css`, `ArticleRepository.read_summary()` and duplicate reconciliation order state were removed, implementation-locking tests were reduced, and the settings icon was optimized.
+
+V0.12.9 keeps each Book directory the source of truth for Library membership. When a Library is selected, `LibraryRepository` scans every Book's `passages/` and `userdata/`, validates what can actually be loaded, reconciles `book.json["passages"]` and `book.json["userdata"]`, and only then publishes the navigation tree. Existing valid Passage order in `book.json` is preserved while newly discovered Passage folders are appended.
+
+`passage.json` is now the only validity boundary for a Passage. `ArticleRepository.load()` first builds a passage-only Article; corrupt or invalid `exercise.json` then falls back to that Article with a warning instead of invalidating the Passage. `vocabulary.json` remains independent and reports its own load errors without blocking Passage navigation. The system default account is now folder/username `xiaoxin`: a missing `xiaoxin` is created during reconciliation, while an existing but damaged `xiaoxin` is reported and never overwritten automatically.
 
 ```text
 studybench/
@@ -364,7 +368,7 @@ Qt-specific playback lives in `program/ui/audio_playback.py`, while background e
 
 ## Accounts
 
-Each Book has a system `Default User` account plus optional registered local accounts. `answer_sheet.json` belongs to each account. Registration/sign-in/sign-out behavior remains local and password-free.
+Each Book has a system `xiaoxin` account (folder name and username are both `xiaoxin`) plus optional registered local accounts. `answer_sheet.json` belongs to each account. A missing `xiaoxin` is created during Library reconciliation; an existing but damaged `xiaoxin` is never repaired or overwritten automatically. Registration/sign-in/sign-out behavior remains local and password-free.
 
 ## Skills
 
@@ -374,6 +378,6 @@ The package still contains:
 - `skills/image_to_passage/SKILL.md`
 - `skills/vocabulary_enrichment/SKILL.md`
 
-The Passage-generation Skills are aligned with the current runtime schema in V0.12.7: there is no `tts_enabled`, ArticleBlank Segments omit `audio`, and Exercise generation uses the five supported `article_*` types. `vocabulary_enrichment` keeps its existing vocabulary rules.
+The Passage-generation Skills remain aligned with the current runtime schema in V0.12.9: there is no `tts_enabled`, ArticleBlank Segments omit `audio`, and Exercise generation uses the five supported `article_*` types. `vocabulary_enrichment` keeps its existing vocabulary rules.
 
 The versioned files under `docs/` are historical design records for the evolution of the program. The current README, current Skills, and executable schema validation in the Article/Vocabulary modules are authoritative when an older design document differs.

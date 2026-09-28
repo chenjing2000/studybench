@@ -47,7 +47,7 @@ class FakeTTS:
 def build_apps():
     article_repo = ArticleRepository()
     user_repo = UserDataRepository()
-    library_repo = LibraryRepository(article_repo)
+    library_repo = LibraryRepository(article_repo, user_repo)
     audio = FakeAudioPlayer()
     library = LibraryApplication(library_repo)
     account = AccountApplication(library_repo, user_repo)
@@ -112,46 +112,61 @@ def test_corrupt_passage_switch_is_transactional(tmp_path):
     library_copy = copy_library(tmp_path)
     book_dir = library_copy / "english_reading"
     good_dir = book_dir / "passages" / "human_origins"
-    bad = book_dir / "passages" / "bad_exercise"
+    bad = book_dir / "passages" / "bad_passage"
     shutil.copytree(good_dir, bad)
     passage_data = json.loads((bad / "passage.json").read_text(encoding="utf-8"))
-    passage_data["title"] = "Bad Exercise Passage"
+    passage_data["title"] = "Bad Passage"
     (bad / "passage.json").write_text(
         json.dumps(passage_data, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    (bad / "exercise.json").write_text('{"type": ', encoding="utf-8")
-    book_data = json.loads((book_dir / "book.json").read_text(encoding="utf-8"))
-    book_data["passages"].append("bad_exercise")
-    (book_dir / "book.json").write_text(
-        json.dumps(book_data, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
 
     library, account, article, vocabulary, coordinator = build_apps()
     update = coordinator.open_library(library_copy)
-    good = Path(update.books[0]["passages"][0]["path"])
+    good = next(
+        Path(item["path"])
+        for item in update.books[0]["passages"]
+        if item["folder"] == "human_origins"
+    )
     bad_path = next(
         Path(item["path"])
         for item in update.books[0]["passages"]
-        if item["folder"] == "bad_exercise"
+        if item["folder"] == "bad_passage"
     )
     coordinator.open_passage(good)
     original_article = article.current_article
     original_words = vocabulary.word_texts()
     original_user = account.current_user_folder
 
+    # It was valid during Library reconciliation, then became corrupt before open.
+    (bad_path / "passage.json").write_text('{"title": ', encoding="utf-8")
     try:
         coordinator.open_passage(bad_path)
     except Exception:
         pass
     else:
-        raise AssertionError("corrupt Passage must fail")
+        raise AssertionError("corrupt passage.json must fail")
 
     assert library.current_passage_path == good
     assert article.current_article is original_article
     assert vocabulary.word_texts() == original_words
     assert account.current_user_folder == original_user
+
+
+def test_corrupt_exercise_opens_passage_with_warning(tmp_path):
+    library_copy = copy_library(tmp_path)
+    passage_dir = library_copy / "english_reading" / "passages" / "human_origins"
+    (passage_dir / "exercise.json").write_text('{"type": ', encoding="utf-8")
+
+    library, _account, article, _vocabulary, coordinator = build_apps()
+    update = coordinator.open_library(library_copy)
+    passage = Path(update.books[0]["passages"][0]["path"])
+    update = coordinator.open_passage(passage)
+
+    assert library.current_passage_path == passage
+    assert article.current_article is not None
+    assert article.current_article.has_exercise is False
+    assert any("exercise.json 无法读取" in message.text for message in update.messages)
 
 
 def test_corrupt_library_does_not_clear_existing_workspace(tmp_path):

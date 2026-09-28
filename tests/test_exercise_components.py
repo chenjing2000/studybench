@@ -48,17 +48,10 @@ def blank_passage():
     }
 
 
-def assert_common_ui(component):
+def assert_common_component(component):
     assert component["type"] == "exercise_actions"
     assert [item["text"] for item in component["buttons"]] == ["hints", "ref ans", "reset"]
-    assert component["ui"]["button_width_px"] == 70
-    assert component["ui"]["button_height_px"] == 30
-    assert component["ui"]["gap_px"] == 15
-    assert component["ui"]["alignment"] == "center"
-    assert component["ui"]["button_font_size_pt"] == 12
-    assert component["ui"]["button_text_color"] == "#4c8045"
-    assert component["ui"]["button_font_weight"] == "700"
-    assert component["ui"]["button_border_radius_px"] == 8
+    assert "ui" not in component
 
 
 def test_choice_components_define_wrong_hint_reference_and_reset(tmp_path):
@@ -79,10 +72,9 @@ def test_choice_components_define_wrong_hint_reference_and_reset(tmp_path):
         },
     )
     component = build_choice_components(article)
-    assert_common_ui(component)
+    assert_common_component(component)
     assert component["actions"]["hints"] == {
         "mode": "mark_wrong_selection",
-        "incorrect_color": "#c8161d",
         "items": [{"number": 1, "reference_answer": "A"}],
     }
     assert component["actions"]["ref_ans"]["items"][0]["display_answer"] == "A. Alpha"
@@ -107,7 +99,7 @@ def test_answer_components_have_no_hint_and_text_reference(tmp_path):
         },
     )
     component = build_answer_components(article)
-    assert_common_ui(component)
+    assert_common_component(component)
     assert component["actions"]["hints"]["mode"] == "none"
     assert component["actions"]["ref_ans"]["items"][0]["display_answer"] == "Very well."
     assert component["actions"]["reset"]["mode"] == "reset_exercise"
@@ -130,9 +122,8 @@ def test_cloze_components_define_wrong_hint_and_option_reference(tmp_path):
         },
     )
     component = build_cloze_components(article)
-    assert_common_ui(component)
+    assert_common_component(component)
     assert component["actions"]["hints"]["mode"] == "mark_wrong_selection"
-    assert component["actions"]["hints"]["incorrect_color"] == "#c8161d"
     assert component["actions"]["ref_ans"]["items"][0]["display_answer"] == "A. good"
 
 
@@ -153,7 +144,7 @@ def test_cloze_words_components_have_no_hint_and_word_reference(tmp_path):
         },
     )
     component = build_word_components(article)
-    assert_common_ui(component)
+    assert_common_component(component)
     assert component["actions"]["hints"]["mode"] == "none"
     assert component["actions"]["ref_ans"]["items"][0]["display_answer"] == "brightly"
 
@@ -175,6 +166,6 @@ def test_cloze_sentences_reference_includes_key_and_shared_sentence(tmp_path):
         },
     )
     component = build_sentence_components(article)
-    assert_common_ui(component)
+    assert_common_component(component)
     assert component["actions"]["hints"]["mode"] == "none"
     assert component["actions"]["ref_ans"]["items"][0]["display_answer"] == "B. Two."

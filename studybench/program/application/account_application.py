@@ -43,23 +43,28 @@ class AccountApplication:
             book_dir, self.user_data_repository.validate_user_folder_reference
         )
         warnings.extend(ref_warnings)
-        try:
-            self.user_data_repository.ensure_default_user(book_dir)
-        except Exception as error:
-            warnings.append(f"Default User 初始化失败：{error}")
         accounts = []
         for folder_name in references:
             try:
                 accounts.append(self.user_data_repository.get_account(book_dir, folder_name))
             except Exception as error:
                 warnings.append(f"用户 {folder_name} 无法加载：{error}")
-        try:
-            default_account = self.user_data_repository.get_account(book_dir, DEFAULT_USER_FOLDER)
-            folder = default_account["folder"]
-            username = default_account["username"]
-            available = True
-        except Exception as error:
-            warnings.append(f"Default User 数据无法加载：{error}")
+        if DEFAULT_USER_FOLDER in references:
+            try:
+                default_account = self.user_data_repository.get_account(
+                    book_dir, DEFAULT_USER_FOLDER
+                )
+                folder = default_account["folder"]
+                username = default_account["username"]
+                available = True
+            except Exception as error:
+                warnings.append(
+                    f"默认用户 {DEFAULT_USER_FOLDER} 数据无法加载：{error}"
+                )
+                folder = DEFAULT_USER_FOLDER
+                username = DEFAULT_USERNAME
+                available = False
+        else:
             folder = DEFAULT_USER_FOLDER
             username = DEFAULT_USERNAME
             available = False

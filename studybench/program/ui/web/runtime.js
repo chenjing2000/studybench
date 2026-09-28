@@ -335,15 +335,8 @@ function renderExerciseActions(component) {
   exerciseRefAnswersVisible = false;
   exerciseActionButtons = {};
 
-  const ui = component.ui || {};
   const row = document.createElement("div");
   row.className = "exercise-actions";
-  row.style.display = "flex";
-  row.style.justifyContent = ui.alignment === "center" ? "center" : "flex-start";
-  row.style.alignItems = "center";
-  row.style.gap = String(Number(ui.gap_px) || 15) + "px";
-  row.style.marginTop = String(Number(ui.row_margin_top_px) || 10) + "px";
-  row.style.width = "100%";
 
   (Array.isArray(component.buttons) ? component.buttons : []).forEach(function (definition) {
     const actionName = String(definition.action || "");
@@ -353,17 +346,6 @@ function renderExerciseActions(component) {
     button.className = "exercise-action-button";
     button.textContent = String(definition.text || actionName);
     button.dataset.action = actionName;
-    button.style.width = String(Number(ui.button_width_px) || 70) + "px";
-    button.style.height = String(Number(ui.button_height_px) || 30) + "px";
-    button.style.boxSizing = "border-box";
-    button.style.border = String(ui.button_border || "1px solid #9a9a9a");
-    button.style.borderRadius = String(Number(ui.button_border_radius_px) || 4) + "px";
-    button.style.background = String(ui.button_background || "#ffffff");
-    button.style.color = String(ui.button_text_color || "#4c8045");
-    button.style.fontFamily = "inherit";
-    button.style.fontSize = String(Number(ui.button_font_size_pt) || 10) + "pt";
-    button.style.fontWeight = String(ui.button_font_weight || "700");
-    button.style.cursor = "pointer";
     button.addEventListener("click", function () {
       handleExerciseAction(actionName);
     });
@@ -429,9 +411,8 @@ function findExerciseRadio(number, value) {
 }
 
 function clearHintFormatting() {
-  document.querySelectorAll('#exerciseSection .option-text[data-exercise-hint-marked="1"]').forEach(function (text) {
-    text.style.color = "";
-    delete text.dataset.exerciseHintMarked;
+  document.querySelectorAll('#exerciseSection .option-text.exercise-hint-incorrect').forEach(function (text) {
+    text.classList.remove("exercise-hint-incorrect");
   });
 }
 
@@ -443,7 +424,6 @@ function clearExerciseFeedback() {
 
 function applyExerciseHints(action) {
   if (!action || action.mode !== "mark_wrong_selection") return;
-  const color = String(action.incorrect_color || "#c8161d");
   (Array.isArray(action.items) ? action.items : []).forEach(function (item) {
     const number = Number(item.number);
     const answer = getExerciseAnswer(number).trim();
@@ -453,8 +433,7 @@ function applyExerciseHints(action) {
     const row = radio.closest("label");
     const text = row ? row.querySelector(".option-text") : null;
     if (!text) return;
-    text.style.color = color;
-    text.dataset.exerciseHintMarked = "1";
+    text.classList.add("exercise-hint-incorrect");
   });
 }
 
@@ -464,22 +443,12 @@ function appendReferenceFeedback(item) {
   const question = findExerciseQuestion(number);
   if (!question) return;
 
-  const ui = (exerciseActionsComponent && exerciseActionsComponent.ui) || {};
   const feedback = document.createElement("div");
   feedback.className = "exercise-feedback";
   feedback.dataset.exerciseFeedback = "1";
-  feedback.style.flexBasis = "100%";
-  feedback.style.width = "100%";
-  feedback.style.boxSizing = "border-box";
-  feedback.style.marginTop = String(Number(ui.feedback_margin_top_px) || 8) + "px";
-  feedback.style.display = "grid";
-  feedback.style.gap = String(Number(ui.feedback_line_gap_px) || 4) + "px";
-  feedback.style.fontSize = String(Number(ui.feedback_font_size_pt) || 11) + "pt";
-  feedback.style.lineHeight = "1.5";
 
   const reference = document.createElement("div");
   reference.className = "exercise-reference-answer";
-  reference.style.fontWeight = String(ui.reference_font_weight || "600");
   reference.textContent = "Reference answer: " + String(item.display_answer || item.reference_answer || "");
   feedback.appendChild(reference);
 
@@ -487,7 +456,6 @@ function appendReferenceFeedback(item) {
   if (explanationText) {
     const explanation = document.createElement("div");
     explanation.className = "exercise-explanation";
-    explanation.style.color = String(ui.explanation_color || "#555555");
     explanation.textContent = "Explanation: " + explanationText;
     feedback.appendChild(explanation);
   }
@@ -501,9 +469,6 @@ function applyReferenceAnswers(action) {
 
 function updateExerciseActionButtonStates() {
   if (!exerciseActionsComponent) return;
-  const ui = exerciseActionsComponent.ui || {};
-  const activeBackground = String(ui.active_background || "#e8eef6");
-  const normalBackground = String(ui.button_background || "#ffffff");
   const actions = exerciseActionsComponent.actions || {};
 
   Object.keys(exerciseActionButtons).forEach(function (name) {
@@ -511,7 +476,6 @@ function updateExerciseActionButtonStates() {
     const action = actions[name] || {};
     const active = (name === "hints" && exerciseHintsVisible) ||
       (name === "ref_ans" && exerciseRefAnswersVisible);
-    button.style.background = active ? activeBackground : normalBackground;
     button.setAttribute("aria-pressed", active ? "true" : "false");
     if (name === "reset") button.disabled = !exerciseSaveAllowed;
     if (action.mode === "none") button.setAttribute("aria-pressed", "false");

@@ -250,6 +250,56 @@ body {
   font-size: 12pt;
 }
 
+.exercise-hint-incorrect {
+  color: #c8161d;
+}
+
+.exercise-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 15px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.exercise-action-button {
+  width: 70px;
+  height: 30px;
+  box-sizing: border-box;
+  border: 1px solid #9a9a9a;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #4c8045;
+  font-family: inherit;
+  font-size: 12pt;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.exercise-action-button[aria-pressed="true"] {
+  background: #e8eef6;
+}
+
+.exercise-feedback {
+  flex-basis: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+  font-size: 11pt;
+  line-height: 1.5;
+}
+
+.exercise-reference-answer {
+  font-weight: 600;
+}
+
+.exercise-explanation {
+  color: #555555;
+}
+
 .exercise-textbox {
   padding: 4px 6px;
   border: 1px solid #aaa;

@@ -3,8 +3,8 @@ from pathlib import Path
 from ..json_store import read_json, write_json_atomic
 
 
-DEFAULT_USER_FOLDER = "default_user"
-DEFAULT_USERNAME = "Default User"
+DEFAULT_USER_FOLDER = "xiaoxin"
+DEFAULT_USERNAME = "xiaoxin"
 WINDOWS_INVALID_FILENAME_CHARS = '<>:"/\\|?*'
 WINDOWS_RESERVED_NAMES = {
     "CON", "PRN", "AUX", "NUL",
@@ -17,16 +17,36 @@ class UserDataRepository:
     """Single owner of userdata/<user>/answer_sheet.json files."""
 
     def ensure_default_user(self, book_dir):
+        """Create xiaoxin only when its directory is entirely absent.
+
+        An existing but incomplete/corrupt xiaoxin directory is user data and
+        must never be repaired or overwritten automatically.
+        """
         book_dir = Path(book_dir)
-        user_dir = book_dir / "userdata" / DEFAULT_USER_FOLDER
+        userdata_dir = book_dir / "userdata"
+        user_dir = userdata_dir / DEFAULT_USER_FOLDER
         answer_path = user_dir / "answer_sheet.json"
-        user_dir.mkdir(parents=True, exist_ok=True)
-        if not answer_path.exists():
-            write_json_atomic(
-                answer_path,
-                {"username": DEFAULT_USERNAME, "answers": {}},
-            )
+
+        if not user_dir.exists():
+            userdata_dir.mkdir(parents=True, exist_ok=True)
+            user_dir.mkdir()
+            try:
+                write_json_atomic(
+                    answer_path,
+                    {"username": DEFAULT_USERNAME, "answers": {}},
+                )
+            except Exception:
+                try:
+                    user_dir.rmdir()
+                except OSError:
+                    pass
+                raise
             return
+
+        if not user_dir.is_dir():
+            raise ValueError(f"默认用户目录 {DEFAULT_USER_FOLDER} 不是文件夹。")
+        if not answer_path.exists() or not answer_path.is_file():
+            raise ValueError("默认用户 xiaoxin 缺少 answer_sheet.json。")
         data = read_json(answer_path)
         self.validate_answer_sheet(data, DEFAULT_USER_FOLDER)
 
@@ -160,7 +180,12 @@ class UserDataRepository:
             raise ValueError("answer_sheet.json 的 username 不能为空。")
         if username != username.strip():
             raise ValueError("answer_sheet.json 的 username 不能包含首尾空格。")
-        if user_folder != DEFAULT_USER_FOLDER:
+        if user_folder == DEFAULT_USER_FOLDER:
+            if username != DEFAULT_USERNAME:
+                raise ValueError(
+                    f"默认用户目录 {DEFAULT_USER_FOLDER} 的 username 必须是 {DEFAULT_USERNAME}。"
+                )
+        else:
             clean_username, expected_folder = self.normalize_username_for_folder(username)
             if clean_username != username:
                 raise ValueError("username 与保存时的完整用户名不一致。")

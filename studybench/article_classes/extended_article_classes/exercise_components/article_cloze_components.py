@@ -1,13 +1,9 @@
 from .exercise_components_ui import build_exercise_actions_component
 
 
-INCORRECT_COLOR = "#c8161d"
-
-
 def build_hints_action(article):
     return {
         "mode": "mark_wrong_selection",
-        "incorrect_color": INCORRECT_COLOR,
         "items": [
             {
                 "number": item["number"],
