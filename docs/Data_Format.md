@@ -61,8 +61,8 @@ Human Origins.json
           "sid": "s001",
           "text": "A complete sentence.",
           "audio": {
-            "uk": "audio/Human Origins/s001_uk.mp3",
-            "us": "audio/Human Origins/s001_us.mp3"
+            "uk": "audio/s001_uk.mp3",
+            "us": "audio/s001_us.mp3"
           }
         }
       ]
@@ -76,8 +76,8 @@ The filename stem is the authoritative Article title. Passage JSON does not stor
 Complete-Article Segment audio paths are:
 
 ```text
-audio/<title>/<sid>_uk.mp3
-audio/<title>/<sid>_us.mp3
+audio/<sid>_uk.mp3
+audio/<sid>_us.mp3
 ```
 
 `ArticleBlank` content uses `[[1]]`, `[[2]]`, ... placeholders and omits Segment `audio` entirely. There is no `tts_enabled` field.

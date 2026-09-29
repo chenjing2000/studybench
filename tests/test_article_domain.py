@@ -17,7 +17,7 @@ from tests.factories import blank_passage_data, passage_data
 def test_article_requires_audio_and_rejects_placeholders(tmp_path):
     article = Article(tmp_path / "Sample.json", passage_data())
     assert article.article_family == "article"
-    assert article.get_segment_audio_path("s001", "uk") == tmp_path / "audio/Sample/s001_uk.mp3"
+    assert article.get_segment_audio_path("s001", "uk") == tmp_path / "audio/s001_uk.mp3"
 
     missing = passage_data()
     del missing["paragraphs"][0]["paragraph"][0]["audio"]

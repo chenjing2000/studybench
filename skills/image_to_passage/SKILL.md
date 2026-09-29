@@ -84,8 +84,8 @@ Then follow `../passage_segment/SKILL.md` exactly:
 For Article, audio paths are:
 
 ```text
-audio/<title>/<sid>_uk.mp3
-audio/<title>/<sid>_us.mp3
+audio/<sid>_uk.mp3
+audio/<sid>_us.mp3
 ```
 
 ## 4. Exercise Extraction
@@ -170,7 +170,7 @@ Before returning/writing files, verify:
 - Passage and Exercise text are separated correctly and source order is preserved;
 - `<title>.json` satisfies `../passage_segment/SKILL.md`;
 - Passage has `filetype="passage"`, no `title`, and no `tts_enabled`;
-- Article uses exact `audio/<title>/<sid>_*.mp3` paths; ArticleBlank has continuous `[[1]]..[[N]]` and no Segment contains `audio`;
+- Article uses exact `audio/<sid>_*.mp3` paths; ArticleBlank has continuous `[[1]]..[[N]]` and no Segment contains `audio`;
 - optional Exercise has `filetype="exercise"` and one supported `article_*` type;
 - all answer-unit numbers are unique positive integers and reference answers are valid;
 - all cloze-family item numbers match Passage placeholder numbers exactly;

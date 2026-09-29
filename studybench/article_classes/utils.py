@@ -108,8 +108,8 @@ def validate_base_passage(data, *, title, allow_audio, require_placeholders):
                 audio = raw_segment.get("audio")
                 if not isinstance(audio, dict):
                     raise ValueError(f"{sid} 缺少 audio。")
-                expected_uk = f"audio/{title}/{sid}_uk.mp3"
-                expected_us = f"audio/{title}/{sid}_us.mp3"
+                expected_uk = f"audio/{sid}_uk.mp3"
+                expected_us = f"audio/{sid}_us.mp3"
                 if audio.get("uk") != expected_uk:
                     raise ValueError(f"{sid} 的 uk 音频路径应为 {expected_uk}。")
                 if audio.get("us") != expected_us:

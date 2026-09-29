@@ -23,8 +23,8 @@ def passage_data(title="Sample", text="A complete sentence."):
                         "sid": "s001",
                         "text": text,
                         "audio": {
-                            "uk": f"audio/{title}/s001_uk.mp3",
-                            "us": f"audio/{title}/s001_us.mp3",
+                            "uk": "audio/s001_uk.mp3",
+                            "us": "audio/s001_us.mp3",
                         },
                     }
                 ]

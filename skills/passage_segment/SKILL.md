@@ -46,16 +46,16 @@ Output structure:
           "sid": "s001",
           "text": "First complete sentence.",
           "audio": {
-            "uk": "audio/<title>/s001_uk.mp3",
-            "us": "audio/<title>/s001_us.mp3"
+            "uk": "audio/s001_uk.mp3",
+            "us": "audio/s001_us.mp3"
           }
         },
         {
           "sid": "s002",
           "text": "Second complete sentence.",
           "audio": {
-            "uk": "audio/<title>/s002_uk.mp3",
-            "us": "audio/<title>/s002_us.mp3"
+            "uk": "audio/s002_uk.mp3",
+            "us": "audio/s002_us.mp3"
           }
         }
       ]
@@ -107,12 +107,10 @@ For **Article**:
 
 ```json
 "audio": {
-  "uk": "audio/<title>/<sid>_uk.mp3",
-  "us": "audio/<title>/<sid>_us.mp3"
+  "uk": "audio/<sid>_uk.mp3",
+  "us": "audio/<sid>_us.mp3"
 }
 ```
-
-The `<title>` namespace prevents SID audio collisions when several Passages share one folder.
 
 For **ArticleBlank**:
 
@@ -131,5 +129,5 @@ Before returning JSON, verify:
 - no `title` or `tts_enabled` field exists;
 - Paragraph and Segment boundaries preserve the source meaning and order;
 - SIDs are lowercase, unique, sequential in reading order, and `next_sid` is correct;
-- Article has no placeholders and every Segment uses `audio/<title>/<sid>_uk.mp3` and `_us.mp3`;
+- Article has no placeholders and every Segment uses `audio/<sid>_uk.mp3` and `_us.mp3`;
 - ArticleBlank has continuous unique `[[1]]..[[N]]` placeholders and no Segment `audio` field.

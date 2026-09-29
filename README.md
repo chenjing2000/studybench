@@ -111,8 +111,8 @@ Content:
           "sid": "s001",
           "text": "A complete sentence.",
           "audio": {
-            "uk": "audio/Human Origins/s001_uk.mp3",
-            "us": "audio/Human Origins/s001_us.mp3"
+            "uk": "audio/s001_uk.mp3",
+            "us": "audio/s001_us.mp3"
           }
         }
       ]
@@ -123,8 +123,8 @@ Content:
           "sid": "s002",
           "text": "Another complete sentence.",
           "audio": {
-            "uk": "audio/Human Origins/s002_uk.mp3",
-            "us": "audio/Human Origins/s002_us.mp3"
+            "uk": "audio/s002_uk.mp3",
+            "us": "audio/s002_us.mp3"
           }
         }
       ]
@@ -133,14 +133,12 @@ Content:
 }
 ```
 
-For complete Articles, Passage audio is namespaced by the Passage filename stem:
+For complete Articles, Passage audio is stored directly under the local `audio/` folder:
 
 ```text
-audio/<title>/<sid>_uk.mp3
-audio/<title>/<sid>_us.mp3
+audio/<sid>_uk.mp3
+audio/<sid>_us.mp3
 ```
-
-This prevents `s001` collisions when multiple Passages share one folder.
 
 ArticleBlank Passages keep `[[1]]..[[N]]` placeholders and omit Segment `audio`
 properties completely.

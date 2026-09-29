@@ -31,7 +31,7 @@ def article_passage():
                     {
                         "sid": "s001",
                         "text": "Complete sentence.",
-                        "audio": {"uk": "audio/Example/s001_uk.mp3", "us": "audio/Example/s001_us.mp3"},
+                        "audio": {"uk": "audio/s001_uk.mp3", "us": "audio/s001_us.mp3"},
                     }
                 ]
             }

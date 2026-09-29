@@ -29,14 +29,12 @@ For each Segment, `PassageGenerator`:
 3. writes files atomically;
 4. reports incomplete or failed Segments.
 
-Paths are namespaced by Article title:
+Segment audio is stored directly under the Passage directory's `audio/` folder:
 
 ```text
-audio/<title>/<sid>_uk.mp3
-audio/<title>/<sid>_us.mp3
+audio/<sid>_uk.mp3
+audio/<sid>_us.mp3
 ```
-
-This prevents `s001` collisions when several Passages live in one folder.
 
 ## 3. Vocabulary audio
 

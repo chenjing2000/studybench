@@ -80,13 +80,15 @@ def test_bundled_skills_use_consistent_frontmatter_and_current_schema():
 
     segment_skill = read("skills/passage_segment/SKILL.md")
     image_skill = read("skills/image_to_passage/SKILL.md")
+    vocabulary_skill = read("skills/vocabulary_enrichment/SKILL.md")
     assert '"filetype": "passage"' in segment_skill
     assert '"filetype": "passage"' in image_skill
     assert '"filetype": "exercise"' in image_skill
     assert '"title":' not in segment_skill
     assert '"tts_enabled":' not in segment_skill
     assert '"tts_enabled":' not in image_skill
-    assert "audio/<title>/" in segment_skill
+    assert "audio/<sid>_uk.mp3" in segment_skill
+    assert "audio/<title>/" not in segment_skill
     assert "ArticleBlank" in segment_skill
     assert "omit `audio` completely" in segment_skill
     for exercise_type in (
@@ -97,6 +99,17 @@ def test_bundled_skills_use_consistent_frontmatter_and_current_schema():
         "article_cloze_sentences",
     ):
         assert exercise_type in image_skill
+
+    assert '"filetype": "vocabulary"' in vocabulary_skill
+    assert "am/is/are/was/were/been/being -> be" in vocabulary_skill
+    assert "children -> child" in vocabulary_skill
+    assert "ask Tom for help" in vocabulary_skill
+    assert "change one's mind" in vocabulary_skill
+    assert "enjoy oneself" in vocabulary_skill
+    assert "Phrase canonicalization overrides word-by-word normalization" in vocabulary_skill
+    assert "original surface form" in vocabulary_skill
+    assert "Without a source Passage" in vocabulary_skill
+    assert "Do not reorder surviving entries" in vocabulary_skill
 
 
 def test_center_panel_right_click_is_delegated_once():
