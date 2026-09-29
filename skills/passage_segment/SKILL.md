@@ -1,39 +1,44 @@
-# Passage Segment Skill — V0.4
+---
+name: passage-segment
+description: Create a StudyBench Passage <title>.json from a supplied title and English passage body, with correct Paragraphs, Segments, SIDs, placeholders, and audio paths.
+---
 
-## Purpose
+# Passage Segment
 
-Create one complete StudyBench `passage.json` from a Passage title and original Passage body.
+## 1. Purpose
 
-This skill is **CREATE-only**. It does not update an existing Passage while preserving old SIDs.
+Create one complete StudyBench Passage file named:
+
+```text
+<title>.json
+```
+
+The filename stem is the authoritative Article title. Do not store `title` in the JSON.
+
+This skill is CREATE-only. Output raw JSON only: no Markdown fence, commentary, patch, or reasoning fields.
 
 StudyBench has two Passage families:
 
-- **Article**: complete readable text, no `[[n]]` placeholders; every Segment contains standard UK/US Passage audio paths.
-- **ArticleBlank**: text contains one or more `[[n]]` placeholders; Segment objects must not contain an `audio` property.
+- **Article**: no `[[n]]` placeholders; every Segment has UK/US audio paths.
+- **ArticleBlank**: contains one or more valid `[[n]]` placeholders; Segment objects have no `audio` field.
 
-There is no `tts_enabled` field in the current schema.
+There is no `tts_enabled` field.
 
-## Input
+## 2. Input and Output
+
+Input:
 
 - Passage title;
 - original Passage body.
 
-Natural Paragraph boundaries are defined by blank lines in the source text. Formatting-only line wraps inside one natural Paragraph are normalized to one ASCII space.
+The title must be suitable as a filename.
 
-If the source contains answer blanks, they must already be represented as StudyBench placeholders `[[1]]`, `[[2]]`, ... before this skill generates the final JSON.
-
-## Output
-
-Output pure JSON only. Do not use Markdown fences and do not add commentary.
-
-### Complete Article
-
-When the body contains no `[[n]]` placeholders, generate an Article. Every Segment must contain standard audio paths:
+Output structure:
 
 ```json
 {
-  "title": "Example Passage",
-  "next_sid": 4,
+  "filetype": "passage",
+  "next_sid": 3,
   "paragraphs": [
     {
       "paragraph": [
@@ -41,28 +46,16 @@ When the body contains no `[[n]]` placeholders, generate an Article. Every Segme
           "sid": "s001",
           "text": "First complete sentence.",
           "audio": {
-            "uk": "audio/s001_uk.mp3",
-            "us": "audio/s001_us.mp3"
+            "uk": "audio/<title>/s001_uk.mp3",
+            "us": "audio/<title>/s001_us.mp3"
           }
         },
         {
           "sid": "s002",
           "text": "Second complete sentence.",
           "audio": {
-            "uk": "audio/s002_uk.mp3",
-            "us": "audio/s002_us.mp3"
-          }
-        }
-      ]
-    },
-    {
-      "paragraph": [
-        {
-          "sid": "s003",
-          "text": "Third complete sentence.",
-          "audio": {
-            "uk": "audio/s003_uk.mp3",
-            "us": "audio/s003_us.mp3"
+            "uk": "audio/<title>/s002_uk.mp3",
+            "us": "audio/<title>/s002_us.mp3"
           }
         }
       ]
@@ -71,127 +64,72 @@ When the body contains no `[[n]]` placeholders, generate an Article. Every Segme
 }
 ```
 
-### ArticleBlank
+For ArticleBlank, keep the same Paragraph/Segment structure and omit `audio` completely from every Segment.
 
-When the body contains valid `[[n]]` placeholders, generate an ArticleBlank. Segment objects must not contain `audio`:
+## 3. Core Rules
 
-```json
-{
-  "title": "Example Blank Passage",
-  "next_sid": 2,
-  "paragraphs": [
-    {
-      "paragraph": [
-        {
-          "sid": "s001",
-          "text": "He started to [[1]] his parents."
-        }
-      ]
-    }
-  ]
-}
-```
+### Paragraphs and text
 
-## Article family rule
+- Natural Paragraph boundaries come from blank lines in the source.
+- Formatting-only line wraps inside one natural Paragraph become one ASCII space.
+- Preserve spelling, capitalization, punctuation, numbers, quotation marks, word order, and valid `[[n]]` placeholders.
+- Remove only program-added leading/trailing whitespace.
+- Every Segment must contain lexical content.
 
-Determine the family only from the Passage body:
+### Segments
+
+One Segment represents one complete sentence meaning. Split only when that sentence meaning ends.
+
+Potential endings include `.`, `?`, `!`, `...`, `…`, `。`, `？`, `！` when they actually end the sentence. Do not mechanically split at commas, semicolons, colons, abbreviations, initials, decimals, URLs, or internal quotation punctuation.
+
+A Paragraph boundary always ends its final Segment.
+
+### SIDs
+
+- Use lowercase `s001`, `s002`, ... in reading order across the entire Passage.
+- Start at `s001`; never emit `s000`.
+- SIDs are Passage-wide unique.
+- `next_sid` is one greater than the largest emitted SID number.
+
+## 4. Article and ArticleBlank Rules
+
+Determine the family from the Passage body only:
 
 - no valid `[[n]]` placeholders → Article;
 - one or more valid `[[n]]` placeholders → ArticleBlank.
 
 Do not infer the family from an Exercise type alone.
 
-For ArticleBlank:
+For **Article**:
 
-- every placeholder number must be an integer >= 1;
-- each placeholder number appears exactly once in the whole Passage;
-- numbering must be continuous from `[[1]]` through `[[N]]`;
-- malformed variants such as `[[0]]`, `[[x]]`, `[[ 1 ]]`, unmatched `[[` or `]]` are invalid;
-- no Segment may contain an `audio` property.
-
-For Article:
-
-- no Segment text may contain `[[` or `]]`;
-- every Segment must contain exactly the standard UK/US audio paths for its SID.
-
-## SID rules
-
-- SIDs are lowercase: `s001`, `s002`, ...;
-- start at `s001` for a newly created Passage;
-- use three digits;
-- never emit `s000`;
-- each SID is unique Passage-wide;
-- allocate SIDs in reading order across Paragraphs;
-- `next_sid` is one greater than the largest emitted SID number.
-
-## Segment rule
-
-One Segment corresponds to one complete sentence meaning. A Segment may end only when the sentence meaning ends.
-
-Potential sentence-ending punctuation includes:
-
-- `.`
-- `?`
-- `!`
-- `...` / `…` only when it actually ends the sentence meaning
-- Chinese equivalents `。？！` for robustness
-
-Do **not** split merely because of:
-
-- comma `,`
-- semicolon `;`
-- colon `:`
-
-Do not mechanically split abbreviations, initials, decimals, URLs, or similar internal punctuation, including examples such as:
-
-- `Mr. Smith`
-- `Dr. Brown`
-- `U.S.`
-- `U.K.`
-- `e.g.`
-- `i.e.`
-- `3.14`
-
-Internal punctuation inside quotations does not necessarily end the outer sentence. For example, `He asked, "Why?" and then walked away.` remains one Segment.
-
-Consecutive ending punctuation such as `?!` or `!!!` stays in the same Segment. Closing quotes or parentheses belong to the sentence they close.
-
-A Paragraph boundary always ends the final Segment in that Paragraph even if the source lacks ending punctuation.
-
-## Text normalization
-
-- Preserve spelling, capitalization, punctuation, numbers, quotation marks, word order, and StudyBench `[[n]]` placeholders.
-- Remove leading/trailing whitespace around each Paragraph.
-- Normalize formatting-only line wraps inside one natural Paragraph to one ASCII space.
-- `Segment.text` must not contain program-added leading or trailing whitespace.
-- Do not add a trailing space merely because another Segment follows.
-- Each Segment must contain lexical content; punctuation-only or empty Segments are invalid.
-
-## Audio fields
-
-For a complete Article, every Segment must contain:
+- Segment text must contain no `[[` or `]]`;
+- every Segment must contain exactly:
 
 ```json
 "audio": {
-  "uk": "audio/s007_uk.mp3",
-  "us": "audio/s007_us.mp3"
+  "uk": "audio/<title>/<sid>_uk.mp3",
+  "us": "audio/<title>/<sid>_us.mp3"
 }
 ```
 
-for Segment `s007`.
+The `<title>` namespace prevents SID audio collisions when several Passages share one folder.
 
-For ArticleBlank, omit `audio` completely. Do not write empty audio strings.
+For **ArticleBlank**:
 
-This skill declares paths only; it does not generate audio files, Vocabulary, Exercise data, or cache/hash files.
+- placeholders are `[[1]]`, `[[2]]`, ...;
+- every number is an integer >= 1, appears exactly once Passage-wide, and numbering is continuous through `[[N]]`;
+- malformed forms such as `[[0]]`, `[[x]]`, `[[ 1 ]]`, unmatched `[[`, or unmatched `]]` are invalid;
+- no Segment may contain an `audio` field.
 
-## Final validation
+This skill declares audio paths only; it does not generate audio, Vocabulary, Exercise, or cache files.
 
-Before returning the JSON, verify:
+## 5. Final Validation
 
-- there is no `tts_enabled` property;
-- Paragraph and Segment boundaries follow the source text;
-- all SIDs are unique, lowercase, and in reading order;
-- `next_sid` is correct;
-- complete Articles contain no placeholders and every Segment has exact SID-matching UK/US audio paths;
-- ArticleBlank contains continuous unique `[[1]]..[[N]]` placeholders and no Segment contains `audio`;
-- malformed placeholder syntax is absent.
+Before returning JSON, verify:
+
+- `filetype` is exactly `passage`;
+- no `title` or `tts_enabled` field exists;
+- Paragraph and Segment boundaries preserve the source meaning and order;
+- SIDs are lowercase, unique, sequential in reading order, and `next_sid` is correct;
+- Article has no placeholders and every Segment uses `audio/<title>/<sid>_uk.mp3` and `_us.mp3`;
+- ArticleBlank has continuous unique `[[1]]..[[N]]` placeholders and no Segment `audio` field.

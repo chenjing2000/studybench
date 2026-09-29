@@ -1,0 +1,54 @@
+{
+  "filetype": "exercise",
+  "type": "article_choice",
+  "questions": [
+    {
+      "number": 1,
+      "prompt": "What has modern science given humans new ways to study?",
+      "options": [
+        {
+          "key": "A",
+          "text": "Our origins"
+        },
+        {
+          "key": "B",
+          "text": "Only modern maps"
+        },
+        {
+          "key": "C",
+          "text": "Weather reports"
+        },
+        {
+          "key": "D",
+          "text": "Only written records"
+        }
+      ],
+      "reference_answer": "A",
+      "explanation": "The first paragraph says modern science has given us new ways to study our origins."
+    },
+    {
+      "number": 2,
+      "prompt": "What kinds of evidence do scientists use to study human origins?",
+      "options": [
+        {
+          "key": "A",
+          "text": "Only written records"
+        },
+        {
+          "key": "B",
+          "text": "Fossils, ancient tools, and genetic evidence"
+        },
+        {
+          "key": "C",
+          "text": "Only modern maps"
+        },
+        {
+          "key": "D",
+          "text": "Weather reports"
+        }
+      ],
+      "reference_answer": "B",
+      "explanation": "The second paragraph names fossils, ancient tools, and genetic evidence."
+    }
+  ]
+}

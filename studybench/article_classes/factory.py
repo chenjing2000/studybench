@@ -28,32 +28,32 @@ class LoadedArticle:
     warning: str | None = None
 
 
-def build_article(passage_dir, passage_data, exercise_data=None):
+def build_article(passage_file, passage_data, exercise_data=None):
     """Pure Article factory.
 
     Persistence is intentionally outside the Article domain. Callers provide
     already-read passage/exercise data.
     """
 
-    passage_dir = Path(passage_dir)
+    passage_file = Path(passage_file)
     if exercise_data is None:
         article_class = ArticleBlank if passage_has_placeholders(passage_data) else Article
         return LoadedArticle(
-            article=article_class(passage_dir, passage_data),
+            article=article_class(passage_file, passage_data),
             has_exercise=False,
         )
 
     if not isinstance(exercise_data, dict):
-        raise ValueError("exercise.json 必须是 JSON object。")
+        raise ValueError("Exercise JSON 必须是 JSON object。")
 
     exercise_type = exercise_data.get("type")
     article_class = TYPE_CLASS_MAP.get(exercise_type)
     if article_class is not None:
-        article = article_class(passage_dir, passage_data, exercise_data)
+        article = article_class(passage_file, passage_data, exercise_data)
         return LoadedArticle(article=article, has_exercise=True)
 
     fallback_class = ArticleBlank if passage_has_placeholders(passage_data) else Article
-    article = fallback_class(passage_dir, passage_data)
+    article = fallback_class(passage_file, passage_data)
     label = str(exercise_type) if exercise_type is not None else "<missing>"
     warning = (
         f"Unsupported exercise type: {label}. "

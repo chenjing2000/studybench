@@ -24,7 +24,6 @@ from studybench.article_classes.extended_article_classes.exercise_components.art
 
 def article_passage():
     return {
-        "title": "Example",
         "next_sid": 2,
         "paragraphs": [
             {
@@ -32,7 +31,7 @@ def article_passage():
                     {
                         "sid": "s001",
                         "text": "Complete sentence.",
-                        "audio": {"uk": "audio/s001_uk.mp3", "us": "audio/s001_us.mp3"},
+                        "audio": {"uk": "audio/Example/s001_uk.mp3", "us": "audio/Example/s001_us.mp3"},
                     }
                 ]
             }
@@ -42,7 +41,6 @@ def article_passage():
 
 def blank_passage():
     return {
-        "title": "Blank",
         "next_sid": 2,
         "paragraphs": [{"paragraph": [{"sid": "s001", "text": "He is [[1]] today."}]}],
     }
@@ -56,7 +54,7 @@ def assert_common_component(component):
 
 def test_choice_components_define_wrong_hint_reference_and_reset(tmp_path):
     article = ArticleChoice(
-        tmp_path,
+        tmp_path / "Example.json",
         article_passage(),
         {
             "type": "article_choice",
@@ -84,7 +82,7 @@ def test_choice_components_define_wrong_hint_reference_and_reset(tmp_path):
 
 def test_answer_components_have_no_hint_and_text_reference(tmp_path):
     article = ArticleAnswer(
-        tmp_path,
+        tmp_path / "Example.json",
         article_passage(),
         {
             "type": "article_answer",
@@ -107,7 +105,7 @@ def test_answer_components_have_no_hint_and_text_reference(tmp_path):
 
 def test_cloze_components_define_wrong_hint_and_option_reference(tmp_path):
     article = ArticleCloze(
-        tmp_path,
+        tmp_path / "Blank.json",
         blank_passage(),
         {
             "type": "article_cloze",
@@ -129,7 +127,7 @@ def test_cloze_components_define_wrong_hint_and_option_reference(tmp_path):
 
 def test_cloze_words_components_have_no_hint_and_word_reference(tmp_path):
     article = ArticleClozeWords(
-        tmp_path,
+        tmp_path / "Blank.json",
         blank_passage(),
         {
             "type": "article_cloze_words",
@@ -151,7 +149,7 @@ def test_cloze_words_components_have_no_hint_and_word_reference(tmp_path):
 
 def test_cloze_sentences_reference_includes_key_and_shared_sentence(tmp_path):
     article = ArticleClozeSentences(
-        tmp_path,
+        tmp_path / "Blank.json",
         blank_passage(),
         {
             "type": "article_cloze_sentences",

@@ -88,31 +88,31 @@ class UserDataRepository:
         except OSError:
             pass
 
-    def load_passage_answer(self, passage_dir, user_folder):
-        passage_dir = Path(passage_dir)
-        book_dir = passage_dir.parent.parent
+    def load_passage_answer(self, book_dir, article_id, user_folder):
+        article_id = self._validate_article_id(article_id)
         answer_sheet = self._read_sheet(book_dir, user_folder)
-        return answer_sheet["answers"].get(passage_dir.name)
+        return answer_sheet["answers"].get(article_id)
 
     def save_passage_answers(
         self,
-        passage_dir,
+        book_dir,
+        article_id,
         user_folder,
         exercise_type,
         normalized_answers,
     ):
-        passage_dir = Path(passage_dir)
-        book_dir = passage_dir.parent.parent
+        book_dir = Path(book_dir)
+        article_id = self._validate_article_id(article_id)
         if not isinstance(normalized_answers, list):
             raise ValueError("Exercise answers 必须是数组。")
         answer_sheet = self._read_sheet(book_dir, user_folder)
         if any(item["answer"] for item in normalized_answers):
-            answer_sheet["answers"][passage_dir.name] = {
+            answer_sheet["answers"][article_id] = {
                 "type": exercise_type,
                 "answers": normalized_answers,
             }
         else:
-            answer_sheet["answers"].pop(passage_dir.name, None)
+            answer_sheet["answers"].pop(article_id, None)
         write_json_atomic(
             book_dir / "userdata" / user_folder / "answer_sheet.json",
             answer_sheet,
@@ -218,6 +218,15 @@ class UserDataRepository:
                 seen.add(number)
                 if not isinstance(answer, str):
                     raise ValueError(f"{passage_folder} 的 answer 必须是字符串。")
+
+
+    @staticmethod
+    def _validate_article_id(article_id):
+        if not isinstance(article_id, str) or not article_id.strip():
+            raise ValueError("article_id 不能为空。")
+        if article_id != article_id.strip():
+            raise ValueError("article_id 不能包含首尾空格。")
+        return article_id
 
     def _read_sheet(self, book_dir, user_folder):
         self.validate_user_folder_reference(user_folder)

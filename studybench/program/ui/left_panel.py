@@ -32,7 +32,7 @@ class LeftPanel(QWidget):
         self.project_root = Path(project_root)
         self.library_dir = ""
 
-        self.select_folder_button = QPushButton("选择文件夹")
+        self.select_folder_button = QPushButton("选择图书馆")
         button_font = self.select_folder_button.font()
         button_font.setPointSize(10)
         button_font.setBold(False)
@@ -101,7 +101,7 @@ class LeftPanel(QWidget):
     def _choose_folder(self):
         start_dir = self.library_dir
         if not start_dir:
-            candidate = self.project_root / "example_library_english"
+            candidate = self.project_root / "library_en"
             start_dir = str(candidate if candidate.exists() else self.project_root)
         selected = QFileDialog.getExistingDirectory(self, "选择英语 Library 文件夹", start_dir)
         if selected:

@@ -106,7 +106,8 @@ def test_vocabulary_io_round_trip_preserves_flat_json_schema(tmp_path):
     VocabularyIO.save(vocab, path)
 
     raw = json.loads(path.read_text(encoding="utf-8"))
-    assert list(raw) == ["words"]
+    assert list(raw) == ["filetype", "words"]
+    assert raw["filetype"] == "vocabulary"
     assert raw["words"][0]["word"] == "balance"
     assert "word_cell" not in raw["words"][0]
     assert raw["words"][1]["audio"]["uk"] == "audio_vocabulary/try_one's_best_to_uk.mp3"
@@ -121,6 +122,7 @@ def test_vocabulary_io_keeps_strict_audio_path_validation(tmp_path):
     path.write_text(
         json.dumps(
             {
+                "filetype": "vocabulary",
                 "words": [
                     {
                         "word": "alpha",

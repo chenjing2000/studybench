@@ -1,16 +1,16 @@
 # StudyBench — PySide6 Edition
 
-StudyBench is an offline English intensive-reading bench built with PySide6.
+StudyBench is an offline English intensive-reading workbench built with PySide6.
 
 ## Stack
 
 - Desktop shell: PySide6 Qt Widgets
-- Left panel: native Qt Book/Passage tree
+- Left panel: native Qt recursive Library tree
 - Center: `QWebEngineView` + local HTML/CSS/plain JavaScript
 - Right panel: native Qt Vocabulary widgets
 - Python ↔ page: `QWebChannel`
 - Audio playback: one global `QMediaPlayer` + `QAudioOutput`
-- Audio generation: `program/audio_generator/` with independent TTS and MDICT providers
+- Audio generation: `program/audio_generator/`
 - Persistence: JSON + filesystem only
 - Environment: `uv`
 - Entry point: root `main.py`
@@ -21,129 +21,89 @@ uv run python main.py
 uv run pytest
 ```
 
-## V0.12.11 architecture
+## V0.13.0 data model
 
-V0.12.11 keeps the V0.12.9 cleanup architecture and simplifies center-panel right-click handling: Qt disables the built-in QWebEngine context menu, while one delegated JavaScript `contextmenu` listener identifies audio-enabled Segments and requests their audio playback. There is no polling and no per-Segment right-click listener.
+V0.13.0 is a destructive data-format upgrade. It does not support the old fixed
+`Book/passages/<folder>/passage.json` layout.
 
-In Settings, MDX/MDD browse dialogs now start from the current field's existing parent directory when available, otherwise the other dictionary field's parent directory, and finally fall back to `C:\\`.
-
-V0.12.11 keeps each Book directory the source of truth for Library membership. When a Library is selected, `LibraryRepository` scans every Book's `passages/` and `userdata/`, validates what can actually be loaded, reconciles `book.json["passages"]` and `book.json["userdata"]`, and only then publishes the navigation tree. Existing valid Passage order in `book.json` is preserved while newly discovered Passage folders are appended.
-
-`passage.json` is now the only validity boundary for a Passage. `ArticleRepository.load()` first builds a passage-only Article; corrupt or invalid `exercise.json` then falls back to that Article with a warning instead of invalidating the Passage. `vocabulary.json` remains independent and reports its own load errors without blocking Passage navigation. The system default account is now folder/username `xiaoxin`: a missing `xiaoxin` is created during reconciliation, while an existing but damaged `xiaoxin` is reported and never overwritten automatically.
+The filesystem is now the navigation source of truth:
 
 ```text
-studybench/
-├── data/
-│   ├── article_repository.py
-│   ├── library_repository.py
-│   ├── user_data_repository.py
-│   └── app_settings_repository.py
-├── article_classes/
-│   ├── factory.py
-│   ├── base_article_classes/
-│   └── extended_article_classes/
-│       ├── exercise_components/
-│       │   ├── exercise_components_ui.py
-│       │   ├── article_answer_components.py
-│       │   ├── article_choice_components.py
-│       │   ├── article_cloze_components.py
-│       │   ├── article_cloze_sentences_components.py
-│       │   └── article_cloze_words_components.py
-│       └── ui/
-├── vocabulary/
-│   ├── word.py
-│   ├── word_cell.py
-│   ├── vocabulary.py
-│   ├── vocabulary_io.py
-│   └── ui/
-│       ├── word_cell_ui.py
-│       ├── vocabulary_presenter.py
-│       ├── vocabulary_entry_widget.py
-│       └── vocabulary_panel.py
-├── program/
-│   ├── application/
-│   │   ├── library_application.py
-│   │   ├── account_application.py
-│   │   ├── article_application.py
-│   │   ├── vocabulary_application.py
-│   │   ├── settings_application.py
-│   │   ├── ports.py
-│   │   └── workspace_coordinator.py
-│   ├── audio_generator/
-│   │   ├── passage_generator.py
-│   │   ├── vocabulary_generator.py
-│   │   ├── tts/
-│   │   └── mdict/
-│   └── ui/
-│       ├── audio_playback.py
-│       ├── audio_task_runner.py
-│       ├── window_state.py
-│       ├── settings_dialog.py
-│       ├── settings_pages/
-│       ├── main_window_ui.py
-│       ├── left_panel.py
-│       ├── center_panel.py
-│       └── right_panel.py
-└── main_window.py
+Library/
+└── Book A/
+    ├── book.json
+    ├── userdata/
+    │   └── xiaoxin/
+    │       └── answer_sheet.json
+    │
+    ├── Introduction.json
+    │
+    └── Unit 1/
+        ├── Reading One.json
+        ├── Reading One.exercise.json
+        ├── Reading One.vocabulary.json
+        │
+        ├── Reading Two.json
+        ├── Reading Two.exercise.json
+        │
+        └── Topic A/
+            └── Story.json
 ```
 
-### Persistence ownership
+Rules:
 
-Each persistent resource has one authoritative owner:
+1. Direct children of the selected Library are Books when they contain `book.json`.
+2. Inside a Book, folders may be nested to any depth.
+3. Folder names become navigation-tree folder names.
+4. A normal `<title>.json` is an Article only when `filetype` is `passage`.
+5. The Article title is the Passage filename stem. Passage JSON has no `title` field.
+6. A Passage may have optional companions named exactly:
+   - `<title>.exercise.json`
+   - `<title>.vocabulary.json`
+7. Companion filenames and `filetype` must agree.
+8. One directory may contain any number of Passages.
+9. `book.json` no longer contains or maintains a `passages` index.
+10. Navigation is rebuilt directly from disk whenever a Library is opened.
 
-- `book.json` → `LibraryRepository`
-- `passage.json` / `exercise.json` → `ArticleRepository`
-- `userdata/<user>/answer_sheet.json` → `UserDataRepository`
-- `vocabulary.json` → `VocabularyIO`
-- root `audio_config.json` → `program/audio_generator/config.py`
-- root `settings.json` → `AppSettingsRepository` (window state + playback preference)
-- generated MP3 files → the Audio Generator
+A malformed Passage file excludes only that Article. A malformed Exercise or
+Vocabulary file reports a warning but does not invalidate an otherwise valid
+Passage.
 
-`ArticleRepository` reads Article files and passes already-loaded data to the pure Article factory. Article domain classes do not read JSON themselves and do not build UI payloads. `LibraryRepository` reads only the Passage summary needed for navigation, so a malformed `exercise.json` does not hide the Book from the left tree; the full Article is validated when that Passage is opened.
+Empty branches are pruned from the navigation tree. `userdata`, hidden folders,
+`__pycache__`, and symlinks are not treated as content branches.
 
-### State and transaction boundaries
-
-Application objects are the unique owners of their current state. Their internal current values are private and exposed read-only or as snapshots. `VocabularyApplication.snapshot()` returns a detached Vocabulary, so UI presentation never holds the Application lock or mutates the live Vocabulary. Vocabulary audio jobs use a monotonic revision to avoid merging stale results over newer user edits.
-
-Workspace switching follows a prepare-then-commit rule. A corrupt Passage cannot leave the Library pointing at one Passage while Article/Vocabulary still represent another, and a failed Library load does not clear the existing workspace. Cross-Application operations stay in `WorkspaceCoordinator`; single-Application operations do not. `WorkspaceUpdate` carries explicit change flags and typed application messages to the Qt shell.
-
-Qt playback and background execution remain adapters in `program/ui/`. Application code talks to playback through the small `AudioPlaybackPort` protocol and never imports PySide6. `AudioTaskRunner` owns the single audio-generation running state.
-
-The bundled demonstration Library is `example_library_english/` at the project root. It is data, not a Python package.
-
-
-### Settings and audio configuration
-
-The left sidebar has a gear-icon `settings` button immediately to the right of the Library folder-selection button. The Settings dialog has two pages:
-
-- **Audio Config**: MDX file, MDD file, one of six fixed UK Edge-TTS voices, one of six fixed US Edge-TTS voices, and `wait_seconds` (non-negative, at most one decimal place; default `2.0`).
-- **Playback**: default Passage accent (`British` / `American`).
-
-`audio_config.json` contains only the selected values; voice choice lists are program constants and are not persisted. Vocabulary `gen audio` is enabled only when the Vocabulary is non-empty, the configured MDX and MDD files both exist, and no audio-generation task is running. Passage Gen Audio uses Edge-TTS and does not require MDX/MDD.
-Both root configuration files are machine-local and are ignored by Git; missing files are recreated with safe defaults.
-
-
-### Bundled creation Skills
-
-`skills/passage_segment/SKILL.md` and `skills/image_to_passage/SKILL.md` follow the same schema enforced by the Article domain:
-
-- complete `Article` Passages contain no `[[n]]` placeholders and every Segment declares its standard UK/US `audio/{sid}_*.mp3` paths;
-- `ArticleBlank` Passages contain continuous unique `[[1]]..[[N]]` placeholders and Segment objects have no `audio` property;
-- there is no `tts_enabled` field;
-- supported Exercise types are exactly `article_choice`, `article_answer`, `article_cloze`, `article_cloze_words`, and `article_cloze_sentences`.
-
-Versioned documents under `docs/` are historical design records unless a newer README/current schema explicitly says otherwise.
-
-## Passage data
-
-### `Article` family
-
-Every Segment has `sid`, `text`, and standard UK/US Passage audio paths:
+## `book.json`
 
 ```json
 {
-  "title": "A Complete Article",
-  "next_sid": 2,
+  "bookname": "English Reading",
+  "userdata": [
+    "xiaoxin"
+  ]
+}
+```
+
+`bookname` is the displayed Book name. `userdata` stores valid user folder names.
+The system default account folder and username are both `xiaoxin`.
+
+If `xiaoxin` is missing, StudyBench creates it. If an existing `xiaoxin` account
+is damaged, StudyBench reports the problem and never repairs or overwrites it
+automatically.
+
+## Passage JSON
+
+Passage filename:
+
+```text
+Human Origins.json
+```
+
+Content:
+
+```json
+{
+  "filetype": "passage",
+  "next_sid": 3,
   "paragraphs": [
     {
       "paragraph": [
@@ -151,8 +111,20 @@ Every Segment has `sid`, `text`, and standard UK/US Passage audio paths:
           "sid": "s001",
           "text": "A complete sentence.",
           "audio": {
-            "uk": "audio/s001_uk.mp3",
-            "us": "audio/s001_us.mp3"
+            "uk": "audio/Human Origins/s001_uk.mp3",
+            "us": "audio/Human Origins/s001_us.mp3"
+          }
+        }
+      ]
+    },
+    {
+      "paragraph": [
+        {
+          "sid": "s002",
+          "text": "Another complete sentence.",
+          "audio": {
+            "uk": "audio/Human Origins/s002_uk.mp3",
+            "us": "audio/Human Origins/s002_us.mp3"
           }
         }
       ]
@@ -161,34 +133,38 @@ Every Segment has `sid`, `text`, and standard UK/US Passage audio paths:
 }
 ```
 
-The complete-Article family rejects `[[n]]` placeholders.
+For complete Articles, Passage audio is namespaced by the Passage filename stem:
 
-### `ArticleBlank` family
+```text
+audio/<title>/<sid>_uk.mp3
+audio/<title>/<sid>_us.mp3
+```
 
-Blank Articles keep the same Paragraph/Segment/SID structure but Segment objects have no `audio` property:
+This prevents `s001` collisions when multiple Passages share one folder.
+
+ArticleBlank Passages keep `[[1]]..[[N]]` placeholders and omit Segment `audio`
+properties completely.
+
+There is no `tts_enabled` field.
+
+## Exercise JSON
+
+Exercise filename:
+
+```text
+Human Origins.exercise.json
+```
+
+Every Exercise JSON requires:
 
 ```json
 {
-  "title": "A Blank Article",
-  "next_sid": 2,
-  "paragraphs": [
-    {
-      "paragraph": [
-        {
-          "sid": "s001",
-          "text": "He started to [[1]] his parents."
-        }
-      ]
-    }
-  ]
+  "filetype": "exercise",
+  "type": "article_choice"
 }
 ```
 
-Each valid `[[n]]` number appears once. `ArticleBlank` requires at least one placeholder and forbids Segment `audio`.
-
-## Exercise types
-
-`exercise.json` is optional. Pure `Article` / `ArticleBlank` Passages have no Exercise file. Supported exercise types are:
+Supported `type` values are:
 
 - `article_choice`
 - `article_answer`
@@ -196,190 +172,129 @@ Each valid `[[n]]` number appears once. `ArticleBlank` requires at least one pla
 - `article_cloze_words`
 - `article_cloze_sentences`
 
-### `article_choice`
+The five Exercise schemas otherwise keep their existing fields and validation
+rules. An invalid Exercise falls back to the valid base Article and produces a
+warning.
+
+## Vocabulary JSON
+
+Vocabulary filename:
+
+```text
+Human Origins.vocabulary.json
+```
+
+Top-level schema:
 
 ```json
 {
-  "type": "article_choice",
-  "questions": [
-    {
-      "number": 1,
-      "prompt": "Which answer is correct?",
-      "options": [
-        {"key": "A", "text": "..."},
-        {"key": "B", "text": "..."}
-      ],
-      "reference_answer": "B",
-      "explanation": ""
-    }
-  ]
+  "filetype": "vocabulary",
+  "words": []
 }
 ```
 
-Choice prompts may not contain `[[n]]`.
-
-### `article_answer`
-
-```json
-{
-  "type": "article_answer",
-  "questions": [
-    {
-      "number": 1,
-      "prompt": "How was the dress?",
-      "reference_answer": "It was a bit small.",
-      "explanation": ""
-    }
-  ]
-}
-```
-
-### `article_cloze`
-
-Each blank owns its own option set:
-
-```json
-{
-  "type": "article_cloze",
-  "items": [
-    {
-      "number": 1,
-      "options": [
-        {"key": "A", "text": "watch"},
-        {"key": "B", "text": "help"}
-      ],
-      "reference_answer": "B",
-      "explanation": ""
-    }
-  ]
-}
-```
-
-### `article_cloze_words`
-
-```json
-{
-  "type": "article_cloze_words",
-  "items": [
-    {
-      "number": 1,
-      "cue": "bright",
-      "reference_answer": "brightly",
-      "explanation": ""
-    }
-  ]
-}
-```
-
-### `article_cloze_sentences`
-
-Sentence options are shared by the whole exercise:
-
-```json
-{
-  "type": "article_cloze_sentences",
-  "options": [
-    {"key": "A", "text": "Sentence A."},
-    {"key": "B", "text": "Sentence B."}
-  ],
-  "items": [
-    {
-      "number": 1,
-      "reference_answer": "B",
-      "explanation": ""
-    }
-  ]
-}
-```
-
-For the three `ArticleBlank` exercise types, `items[].number` must match the Passage `[[n]]` placeholders exactly.
-
-## Factory and fallback
-
-`ArticleRepository` owns `passage.json` / `exercise.json` reading. It passes already-loaded objects to the persistence-free `article_classes/factory.py`, which is the single Article construction entry point.
-
-- supported `exercise.type` → instantiate the matching extended class and validate strictly;
-- no `exercise.json`, no `[[n]]` → `Article`;
-- no `exercise.json`, with `[[n]]` → `ArticleBlank`;
-- unsupported exercise type → fall back by the same placeholder rule and report a non-blocking warning;
-- malformed JSON is rejected by the Repository; invalid data for a supported type is rejected by the Domain/Factory, never silently downgraded.
-
-## Rendering
-
-Article-specific UI is described by seven UI-neutral feature builders. `ArticleUI` and `ArticleBlankUI` define the two Passage presentation families; the five extended UI builders add their Exercise components without duplicating Passage rendering.
-
-The builders emit a small component view-model contract (`title`, `paragraph`, `segment`, `blank`, `passage_audio_controls`, `question`, `radio_group`, `textbox`, `cue`, `option_pool`, etc.). `program/ui/article_ui_registry.py` maps an Article object to the correct builder.
-
-The actual center widget is `program/ui/center_panel.py`. It hosts `QWebEngineView` and sends the feature view model to `program/ui/web/runtime.js`. The JavaScript runtime renders generic components and does not reinterpret `exercise.json` by Article type. `center_web_bridge.py` is protocol-only: JavaScript actions become Qt signals and contain no Article/Vocabulary persistence logic.
-
-Vocabulary selection/highlighting remains a cross-feature StudyBench behavior in the program/web layer rather than the Vocabulary domain.
+Vocabulary audio remains under `audio_vocabulary/`. Vocabulary files are strict:
+a file named `<title>.vocabulary.json` must have `filetype: "vocabulary"`.
 
 ## Answer sheet
 
-Textbook answers stay in `exercise.json`; user answers are stored separately per Book account.
+Answers are keyed by the Passage JSON path relative to the Book root, not by a
+folder name or display title:
 
 ```json
 {
-  "username": "Chen Jing",
+  "username": "xiaoxin",
   "answers": {
-    "human_origins": {
+    "Unit 1/Reading One.json": {
       "type": "article_choice",
       "answers": [
-        {"number": 1, "answer": "A"},
-        {"number": 2, "answer": ""}
+        {"number": 1, "answer": "A"}
       ]
     }
   }
 }
 ```
 
-All Exercise types use the same answer record: `number + answer`. RadioButton exercises store the option key; textbox exercises store the typed text. Empty answers remain empty strings in memory. A Passage entry is omitted from disk when every answer is empty.
+This remains unique when different folders contain the same filename or when one
+folder contains several Passages.
 
-Answer edits are automatically saved after a short debounce. Leaving the current Passage/Book or closing StudyBench flushes dirty answers before the action continues.
+## Persistence ownership
 
-## Vocabulary module
+- `book.json` → `LibraryRepository`
+- Passage / Exercise JSON → `ArticleRepository`
+- `userdata/<user>/answer_sheet.json` → `UserDataRepository`
+- Vocabulary JSON → `VocabularyIO`
+- root `audio_config.json` → `program/audio_generator/config.py`
+- root `settings.json` → `AppSettingsRepository`
+- generated MP3 files → Audio Generator
 
-The Vocabulary domain remains reusable and UI-free:
+`LibraryRepository` recursively discovers content and validates navigation.
+`ArticleRepository.load(passage_file, exercise_file)` treats the Passage file as
+the only Article validity boundary. `VocabularyIO` independently validates the
+optional Vocabulary companion.
 
-- `Word`: spelling, UK/US phonetics, and the existing plain `meanings` list. There is no `WordMeaning` class.
-- `WordCell`: composition wrapper around one `Word` plus UK/US audio paths; it contains no color/layout/render methods.
-- `Vocabulary`: ordered `WordCell` collection only.
-- `VocabularyIO`: strict `vocabulary.json` loading/saving.
-- Vocabulary audio generation is coordinated by `VocabularyApplication` and `program/audio_generator/VocabularyGenerator`; the core Vocabulary package has no audio-generation service.
+## Application boundaries
 
-Presentation now lives in `studybench/vocabulary/ui/`:
+Application objects own current state. `WorkspaceCoordinator` coordinates only
+cross-application operations. Workspace switching uses prepare-then-commit, so a
+failed Article open leaves the previous Article/Vocabulary/account state intact.
 
-- `WordCellUI`: builds the single-word view model (bold/colorized word, phonetics and speaker targets, meanings).
-- `VocabularyPresenter`: adds ordered-list presentation such as alternating row backgrounds and move availability.
-- `VocabularyEntryWidget`: one rendered word row and its row-level controls.
-- `VocabularyPanel`: the PySide6 list/header/footer shell.
+The center renderer remains deliberately hybrid:
 
-`studybench/vocabulary/__init__.py` does not import the UI package, so importing the core Vocabulary module does not require PySide6. Passage matching/highlighting stays outside the Vocabulary module.
+```text
+Python Domain/Application
+        ↓
+Article UI component model
+        ↓
+QWebEngineView
+        ↓
+HTML + CSS + JavaScript
+```
 
-The external `vocabulary.json` schema remains unchanged and flat for manual editing.
+Python owns authoritative data and persistence. JavaScript owns transient DOM
+interaction. CSS owns Web presentation.
 
-## Audio generation
+The built-in QWebEngine context menu is disabled by Qt. One document-level
+JavaScript `contextmenu` listener identifies right-clicked audio-enabled Segments
+and requests playback; there is no polling and no per-Segment right-click listener.
 
-`program/audio_generator/` contains no PySide6 code. `PassageGenerator` uses only the configured TTS provider. `VocabularyGenerator` first queries the MDICT provider for phonetics and dictionary audio, then uses the TTS provider only for missing UK/US audio.
+## Settings
 
-Only the `Article` family supports Passage audio generation. `Article` keeps audio-path lookup methods, but it no longer has a `generate_passage_audio()` infrastructure method. `ArticleApplication` prepares the request and invokes `PassageGenerator`. `ArticleBlank` cannot enter the Passage-TTS workflow.
+The Settings dialog contains:
 
-Vocabulary generation returns explicit phonetic updates. `VocabularyApplication` merges them into the latest Vocabulary state and persists with `VocabularyIO`, so generation never writes a stale temporary `vocabulary.json` snapshot back over user changes.
+- Audio Config: MDX, MDD, UK voice, US voice, wait seconds
+- Playback: default British/American Passage accent
 
-Qt-specific playback lives in `program/ui/audio_playback.py`, while background execution lives in `program/ui/audio_task_runner.py`. Playback is deliberately separate from generation. Passage Audio and Vocabulary Audio remain independent pipelines and only one generation job may run at a time.
+MDX/MDD Browse start-directory priority is:
 
-## Accounts
+1. current field's valid parent directory;
+2. the other dictionary field's valid parent directory;
+3. `C:\`.
 
-Each Book has a system `xiaoxin` account (folder name and username are both `xiaoxin`) plus optional registered local accounts. `answer_sheet.json` belongs to each account. A missing `xiaoxin` is created during Library reconciliation; an existing but damaged `xiaoxin` is never repaired or overwritten automatically. Registration/sign-in/sign-out behavior remains local and password-free.
+## Project structure
+
+```text
+studybench/
+├── data/
+├── article_classes/
+├── vocabulary/
+├── program/
+│   ├── application/
+│   ├── audio_generator/
+│   └── ui/
+└── main_window.py
+```
+
+The bundled demonstration Library is `library_en/`.
 
 ## Skills
 
-The package still contains:
+The package contains:
 
 - `skills/passage_segment/SKILL.md`
 - `skills/image_to_passage/SKILL.md`
 - `skills/vocabulary_enrichment/SKILL.md`
 
-The Passage-generation Skills remain aligned with the current runtime schema in V0.12.11: there is no `tts_enabled`, ArticleBlank Segments omit `audio`, and Exercise generation uses the five supported `article_*` types. `vocabulary_enrichment` keeps its existing vocabulary rules.
-
-The versioned files under `docs/` are historical design records for the evolution of the program. The current README, current Skills, and executable schema validation in the Article/Vocabulary modules are authoritative when an older design document differs.
+These Skills follow the current filename and `filetype` rules. Current technical
+documentation is under `docs/`; the README and runtime validators remain the concise
+entry points for day-to-day use.

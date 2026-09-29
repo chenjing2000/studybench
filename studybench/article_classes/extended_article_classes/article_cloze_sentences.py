@@ -12,8 +12,8 @@ from ..utils import (
 class ArticleClozeSentences(ArticleBlank):
     exercise_type = "article_cloze_sentences"
 
-    def __init__(self, passage_dir, passage_data, exercise_data):
-        super().__init__(passage_dir, passage_data)
+    def __init__(self, passage_file, passage_data, exercise_data):
+        super().__init__(passage_file, passage_data)
         self.exercise = self._validate_exercise(exercise_data)
 
     @property
@@ -22,7 +22,7 @@ class ArticleClozeSentences(ArticleBlank):
 
     def _validate_exercise(self, data):
         if not isinstance(data, dict) or data.get("type") != self.exercise_type:
-            raise ValueError("exercise.json type 必须为 article_cloze_sentences。")
+            raise ValueError("Exercise JSON type 必须为 article_cloze_sentences。")
         options = validate_options(data.get("options"), "article_cloze_sentences")
         for option in options:
             key = option["key"]

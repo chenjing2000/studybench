@@ -1,58 +1,42 @@
 ---
-name: studybench-vocabulary-enrichment
-description: Enrich StudyBench vocabulary.json from passage.json by improving passage-aware meanings and conservatively extracting useful multi-word expressions.
+name: vocabulary-enrichment
+description: Enrich a StudyBench <title>.vocabulary.json from its matching <title>.json by improving passage-aware meanings and conservatively adding useful multi-word expressions.
 ---
 
-# StudyBench Vocabulary Enrichment Skill
+# Vocabulary Enrichment
 
-## 1. Purpose and Input/Output Contract
+## 1. Purpose
 
-This skill enriches `vocabulary.json` by using the full context in `passage.json`.
+Use the matching `<title>.json` Passage to update `<title>.vocabulary.json` by:
 
-It has two tasks:
+1. completing or correcting `meanings` for existing vocabulary entries;
+2. conservatively extracting useful multi-word expressions and adding them as phrase entries.
 
-1. complete or correct the `meanings` of vocabulary entries already present in `vocabulary.json`;
-2. conservatively extract lexically useful multi-word expressions from `passage.json` and add them to `vocabulary.json`.
+Inputs:
 
-The input files are:
+```text
+<title>.json
+<title>.vocabulary.json
+```
 
-- `passage.json`
-- `vocabulary.json`
-- this `SKILL.md`
+The Passage is authoritative context and must never be modified.
 
-`passage.json` is authoritative context and must never be modified.
+Return the **complete final `<title>.vocabulary.json`**, not a patch. Output raw JSON only: no Markdown fence, commentary, diff, reasoning, confidence, or temporary analysis fields.
 
-The final output must be the **complete final `vocabulary.json`**, not a patch or diff.
+Extracting zero new phrases is valid. This skill does not generate audio files; `Gen Audio` handles missing audio later.
 
-StudyBench import treats the returned `vocabulary.json` as the authoritative replacement file. The imported file may therefore contain additions, modifications, deletions, or a different order. However, this skill must still follow the editing permissions and ordering rules below; do not delete or reorder existing entries without a rule in this skill requiring it.
+## 2. Schema and Editing Permissions
 
-Output raw JSON only:
-
-- no Markdown code fence;
-- no commentary before or after the JSON;
-- no diff;
-- no partial patch;
-- no reasoning fields.
-
-Extracting **zero** new phrases is valid. Never add phrases merely to reach an expected count.
-
-This skill does not generate audio files. Missing vocabulary audio is generated later by `Gen Audio`.
-
----
-
-## 2. Current Vocabulary Schema
-
-Assume the input uses the current StudyBench schema. This skill is not responsible for legacy-schema migration.
-
-The top-level structure is:
+Top level:
 
 ```json
 {
+  "filetype": "vocabulary",
   "words": []
 }
 ```
 
-A normal vocabulary entry has this shape:
+A vocabulary entry is:
 
 ```json
 {
@@ -60,10 +44,7 @@ A normal vocabulary entry has this shape:
   "phonetic_uk": "...",
   "phonetic_us": "...",
   "meanings": [
-    {
-      "pos": "n.",
-      "meaning": "例子；实例"
-    }
+    {"pos": "n.", "meaning": "例子；实例"}
   ],
   "audio": {
     "uk": "audio_vocabulary/example_uk.mp3",
@@ -72,117 +53,89 @@ A normal vocabulary entry has this shape:
 }
 ```
 
-A phrase uses the same entry structure. Do not create a separate `phrases` array.
+A phrase uses the same structure; do not create a separate `phrases` array and do not add `wid`.
 
-For this skill, an **existing phrase entry** is an entry whose trimmed `word` contains two or more whitespace-separated lexical tokens.
+For permission purposes, an existing phrase is an entry whose trimmed `word` contains two or more whitespace-separated lexical tokens. Hyphenated forms such as `state-of-the-art` remain single-word entries under this rule.
 
-Examples:
+| Entry | Allowed changes |
+|---|---|
+| Existing single word | **Only `meanings`** |
+| Existing phrase | May canonicalize `word`, update meanings/audio, and fix other phrase fields when needed to conform to this skill |
+| New phrase | Create the complete phrase entry |
 
-- `be responsible for` -> phrase
-- `in terms of` -> phrase
-- `state-of-the-art` -> single-word entry for permission purposes
-- `decision-making` -> single-word entry for permission purposes
+For an existing single word, never modify or delete `word`, phonetics, audio, or any other non-`meanings` field.
 
-This deterministic rule avoids ambiguity in editing permissions.
+For an existing phrase:
 
-`meanings` must be an array. Each meaning object must contain:
+- preserve `phonetic_uk` / `phonetic_us` exactly if `word` is unchanged;
+- if canonicalization changes `word`, set both phonetic fields to `""`;
+- never invent phrase IPA;
+- delete an existing phrase only when canonicalization would create a duplicate: keep the earliest entry and merge only useful non-duplicate meanings into it.
 
-```json
-{
-  "pos": "v.",
-  "meaning": "发布；发出"
-}
-```
-
-Use concise Simplified Chinese meanings.
-
-Preferred part-of-speech labels for single words are:
-
-- `n.`
-- `v.`
-- `adj.`
-- `adv.`
-- `prep.`
-- `conj.`
-- `pron.`
-- `det.`
-- `interj.`
-- `num.`
-
-Use:
+Allowed POS labels for single words include `n.`, `v.`, `adj.`, `adv.`, `prep.`, `conj.`, `pron.`, `det.`, `interj.`, `num.`. Phrase meanings use exactly:
 
 ```json
 "pos": "phrase"
 ```
 
-for multi-word expressions.
+Meanings contain only `pos` and concise Simplified Chinese `meaning`. Do not add examples or English definitions.
 
-Do not add example sentences, English definitions, reasoning, confidence scores, or source-sentence fields to `meanings`.
+## 3. Meaning Rules
 
----
+For every existing single-word entry that can be located in the Passage:
 
-## 3. Editing Permissions
+1. ensure the **current-context meaning** is represented and place it first when practical;
+2. add only genuinely useful high-frequency/common meanings with independent learning value.
 
-### 3.1 Existing single-word entry
+Do not turn an entry into a full dictionary article. Avoid rare, archaic, obscure, overly technical, or excessively fine-grained senses unless the Passage actually uses them.
 
-For an existing single-word entry, the LLM may modify only:
+Preserve an existing meaning when it is already correct and useful. Revise only for a substantive reason, such as:
 
-```text
-meanings
+- missing current-context meaning;
+- clearly wrong meaning or POS;
+- misleading/seriously unnatural translation;
+- missing important high-frequency meaning.
+
+Closely related Chinese glosses may be combined in one meaning object, for example:
+
+```json
+{"pos": "v.", "meaning": "减少；下降；衰退"}
 ```
 
-It may:
+Use separate objects only for genuinely distinct learnable senses.
 
-- fill empty meanings;
-- add a missing passage meaning;
-- add important high-frequency meanings;
-- correct clearly wrong meanings;
-- correct a wrong part of speech inside `meanings`;
-- replace misleading or seriously unnatural Chinese translations;
-- normalize POS labels inside `meanings` to the StudyBench abbreviations above.
+If an existing word cannot be found in the Passage, do not invent a passage-specific sense; preserve correct existing meanings and make only clearly justified corrections.
 
-It must not modify any other field, including:
+## 4. Phrase Extraction and Canonicalization
 
-- `word`
-- `phonetic_uk`
-- `phonetic_us`
-- `audio`
-- any other existing non-meaning field
+Extract only **lexically useful multi-word expressions worth learning as a unit**. Precision is more important than recall.
 
-Do not delete an existing single-word entry.
+Good candidates include:
 
-### 3.2 Existing phrase entry
+- phrasal verbs: `carry out`, `result in`, `account for`;
+- fixed/semi-fixed expressions: `be responsible for`, `have access to`, `play a role in`;
+- linking/prepositional expressions: `in contrast to`, `as a result of`, `in terms of`;
+- common academic expressions: `a wide range of`, `to some extent`.
 
-An existing phrase entry may be normalized and corrected when necessary.
+Do not extract ordinary free combinations such as `large population`, `beautiful city`, or arbitrary sentence fragments unless they clearly function as a useful lexical unit.
 
-The LLM may modify:
+Every new phrase must be supported by a grammatical surface form in the Passage. Do not invent phrases merely to increase the count.
 
-- `word`, but only for canonicalization;
-- `meanings`;
-- `audio`, when required to match the canonical phrase and StudyBench audio-path rules;
-- other phrase-entry fields only when necessary to make the phrase conform to this skill.
+Store phrases in a common canonical/base form while preserving lexical identity:
 
-Phrase phonetics follow a special rule:
+```text
+resulted in              -> result in
+was responsible for      -> be responsible for
+played a role in         -> play a role in
+has been associated with -> be associated with
+tried my best to          -> try one's best to
+```
 
-- if the phrase `word` remains unchanged, preserve existing `phonetic_uk` and `phonetic_us` exactly;
-- if the phrase `word` is changed by canonicalization, set both `phonetic_uk` and `phonetic_us` to `""` because existing phonetics may no longer match the canonical form;
-- do not invent IPA for a phrase.
+Normalize inflection and person-specific possessives when appropriate, but do not replace an expression with a synonym or unnecessarily simplify it. For example, `in spite of` must not become `despite`, and `play a significant role in` must not automatically become `play a role in`.
 
-Do not delete an existing phrase unless canonicalization would otherwise create a duplicate phrase entry. In that case, keep the earliest existing phrase entry, merge only useful non-duplicate meanings into it, and remove the later duplicate.
+Before adding a phrase, compare its canonical `word` case-insensitively with existing entries. Update an existing matching phrase rather than creating a duplicate.
 
-### 3.3 New phrase entry
-
-For every newly extracted phrase:
-
-1. store the canonical/base form in `word`;
-2. set `phonetic_uk` to `""`;
-3. set `phonetic_us` to `""`;
-4. create one or more concise useful meanings;
-5. use `"pos": "phrase"`;
-6. create the expected UK audio path;
-7. create the expected US audio path.
-
-Example:
+For a new phrase:
 
 ```json
 {
@@ -190,10 +143,7 @@ Example:
   "phonetic_uk": "",
   "phonetic_us": "",
   "meanings": [
-    {
-      "pos": "phrase",
-      "meaning": "导致；造成"
-    }
+    {"pos": "phrase", "meaning": "导致；造成"}
   ],
   "audio": {
     "uk": "audio_vocabulary/result_in_uk.mp3",
@@ -202,239 +152,9 @@ Example:
 }
 ```
 
----
+Usually one good contextual/general phrase meaning is enough; add more only for genuinely distinct high-frequency meanings.
 
-## 4. Meaning Enrichment for Existing Words
-
-For each existing single-word entry, locate how the word is used in the passage.
-
-The contextual meaning used in the passage must be represented in `meanings`.
-
-Then consider whether the word has other high-frequency, generally useful meanings with clear independent learning value.
-
-Keep the result concise. Do not turn the entry into a complete dictionary article.
-
-Include:
-
-1. the meaning used in the current passage;
-2. other common meanings only when they are genuinely useful for general English learning.
-
-Do not include:
-
-- rare meanings;
-- archaic meanings;
-- obscure senses;
-- highly specialized technical meanings unless they are used in the passage;
-- excessively fine dictionary distinctions.
-
-Do not rewrite an existing meaning merely because another wording sounds slightly better.
-
-Modify an existing meaning only when there is a substantive reason, such as:
-
-- the current passage meaning is missing;
-- the meaning is clearly wrong;
-- the POS is wrong;
-- the translation is misleading;
-- the translation is seriously unnatural for learning;
-- an important high-frequency meaning is missing.
-
-If an existing meaning is already correct and useful, preserve it.
-
-When several Chinese glosses express one closely related sense, prefer one meaning object such as:
-
-```json
-{
-  "pos": "v.",
-  "meaning": "减少；下降；衰退"
-}
-```
-
-instead of splitting near-synonyms into several separate objects.
-
-Create separate meaning objects only when the senses are genuinely distinct for learning purposes.
-
-When possible, place the current passage meaning before additional common meanings.
-
-If an existing vocabulary word cannot actually be located in the passage, do not invent a passage-specific sense for it. Preserve correct existing meanings and make only clearly justified corrections.
-
----
-
-## 5. Phrase Extraction
-
-Scan the full passage for useful multi-word expressions.
-
-Phrase extraction must be conservative.
-
-Extract only:
-
-> lexically useful multi-word expressions with independent learning value
-
-The key test is:
-
-> Is this expression useful enough to learn and remember as a unit?
-
-Good candidates include:
-
-### Phrasal verbs
-
-```text
-carry out
-result in
-account for
-lead to
-depend on
-```
-
-### Fixed or semi-fixed expressions
-
-```text
-be responsible for
-be associated with
-have access to
-play a role in
-```
-
-### Useful prepositional or linking expressions
-
-```text
-in contrast to
-as a result of
-in terms of
-in addition to
-```
-
-### Common academic multi-word expressions
-
-```text
-a wide range of
-to some extent
-play a significant role in
-be exposed to
-```
-
-Extract idiomatic or semi-fixed expressions only when they have clear learning value.
-
-Do **not** extract ordinary free combinations merely because several words occur next to one another.
-
-Normally do not extract expressions such as:
-
-```text
-large population
-modern technology
-important problem
-beautiful city
-many people
-rapid development
-```
-
-unless the expression is sufficiently fixed or clearly deserves to be learned as a unit in context.
-
-Do not extract arbitrary sentence fragments.
-
-Do not create phrases merely to increase the number of entries.
-
-Precision is more important than recall.
-
-When uncertain whether an expression has independent lexical value, prefer not to extract it.
-
-Every extracted phrase must be supported by the passage. Do not invent a phrase that does not occur there in a grammatical surface form corresponding to the canonical phrase.
-
----
-
-## 6. Phrase Canonicalization
-
-A newly extracted phrase must normally be stored in its common canonical or base form.
-
-Normalize grammatical morphology while preserving the identity of the expression.
-
-Examples:
-
-```text
-resulted in
--> result in
-```
-
-```text
-was responsible for
--> be responsible for
-```
-
-```text
-played a role in
--> play a role in
-```
-
-```text
-has been associated with
--> be associated with
-```
-
-Do not replace the expression with a synonym.
-
-For example:
-
-```text
-in spite of
-```
-
-must not become:
-
-```text
-despite
-```
-
-Do not unnecessarily simplify the lexical expression.
-
-For example:
-
-```text
-play a significant role in
-```
-
-must not automatically become:
-
-```text
-play a role in
-```
-
-The stored phrase should represent the lexical expression actually supported by the passage, normalized only to its normal learning form.
-
-Before adding a new phrase, compare its canonical form case-insensitively with existing entries. If the same phrase already exists, update the existing phrase when necessary instead of adding a duplicate.
-
----
-
-## 7. Phrase Meanings and Phonetics
-
-Phrase meanings should be concise and useful.
-
-For most phrases, one good contextual/general meaning is enough.
-
-A phrase may contain multiple meanings only when it has genuinely distinct high-frequency meanings worth learning.
-
-Do not make phrase meanings exhaustive.
-
-Use:
-
-```json
-"pos": "phrase"
-```
-
-for every phrase meaning.
-
-Do not generate IPA for phrases.
-
-For a new phrase, use:
-
-```json
-"phonetic_uk": "",
-"phonetic_us": ""
-```
-
-For an existing phrase, preserve phonetics unless its `word` is changed by canonicalization, in which case clear both phonetic fields so `Gen Audio` can obtain phonetics for the canonical form later.
-
----
-
-## 8. Vocabulary Audio Paths
+## 5. Audio Paths, Order, and Duplicates
 
 All vocabulary audio paths use:
 
@@ -442,115 +162,53 @@ All vocabulary audio paths use:
 audio_vocabulary/
 ```
 
-Do not use:
+For a new/canonicalized phrase, derive the filename stem from `word` exactly as StudyBench does:
 
-```text
-vocabulary_audio/
-```
-
-For a new phrase, derive the audio filename stem from the canonical phrase in `word` using the **same normalization rule as StudyBench**:
-
-1. trim leading and trailing whitespace;
-2. convert letters to lowercase;
+1. trim leading/trailing whitespace;
+2. lowercase letters;
 3. replace one or more whitespace characters with `_`;
-4. replace each Windows-invalid filename character below with `_`:
-
-```text
-< > : " / \\ | ? *
-```
-
-5. collapse consecutive `_` characters into one `_`;
-6. remove leading and trailing `_` characters.
+4. replace each Windows-invalid character `< > : " / \\ | ? *` with `_`;
+5. collapse consecutive `_` into one `_`;
+6. remove leading/trailing `_`.
 
 Do not replace other punctuation merely because it is punctuation.
 
 Examples:
 
 ```text
-be responsible for
--> be_responsible_for
+be responsible for -> be_responsible_for
+A/B test            -> a_b_test
+state-of-the-art    -> state-of-the-art
 ```
 
-```text
-A/B test
--> a_b_test
-```
-
-```text
-state-of-the-art
--> state-of-the-art
-```
-
-Then create:
+Then use:
 
 ```text
 audio_vocabulary/<stem>_uk.mp3
 audio_vocabulary/<stem>_us.mp3
 ```
 
-Example:
-
-```text
-audio_vocabulary/be_responsible_for_uk.mp3
-audio_vocabulary/be_responsible_for_us.mp3
-```
-
-This rule must match StudyBench so that the returned `vocabulary.json` passes StudyBench validation.
-
-`Gen Audio` reads the stored audio paths. This skill must not synthesize audio, call TTS, embed MP3 data, or imitate audio content.
-
----
-
-## 9. Ordering and Duplicate Prevention
-
-Preserve the order of all existing entries unless a phrase-duplicate merge requires removal of a later duplicate.
-
-Do not unnecessarily reorder existing single-word entries.
-
-Append newly extracted phrases after all existing entries.
-
-When adding several new phrases, preserve the order of their first meaningful occurrence in the passage.
+Preserve the order of existing entries except when removing a later duplicate phrase. Append new phrases after existing entries, ordered by first meaningful occurrence in the Passage.
 
 Before finishing, ensure:
 
-1. `word` values are unique case-insensitively;
-2. no newly added phrase duplicates an existing phrase after canonicalization;
-3. no two entries produce the same StudyBench audio filename stem.
-
-If a proposed phrase would collide with an existing entry's `word` identity or audio stem, do not add a second conflicting entry.
-
----
-
-## 10. Final Validation
-
-Before returning the final file, verify all of the following:
-
-- the result is valid JSON;
-- the result contains the complete final `vocabulary.json`, not a patch;
-- the top-level `words` array is present;
-- `passage.json` has not been modified;
-- existing single-word entries have not been deleted;
-- existing single-word fields other than `meanings` are unchanged;
-- existing correct meanings were not rewritten merely for style;
-- each existing word includes its passage meaning when that use can be identified;
-- useful high-frequency meanings are included only when they add real learning value;
-- rare and obscure meanings have not been unnecessarily added;
-- new phrases are genuine lexically useful multi-word expressions;
-- extracting zero new phrases is accepted when appropriate;
-- ordinary free combinations have not been over-extracted;
-- new phrases use canonical/base forms;
-- existing phrase phonetics are preserved when `word` is unchanged;
-- existing phrase phonetics are cleared only when phrase canonicalization changes `word`;
-- new phrase phonetics are empty strings;
-- phrase meanings use `"pos": "phrase"`;
-- phrase audio paths use `audio_vocabulary/`;
-- UK phrase audio filenames end in `_uk.mp3`;
-- US phrase audio filenames end in `_us.mp3`;
-- audio stems follow the exact StudyBench normalization rule;
 - `word` values are unique case-insensitively;
-- audio stems are unique;
-- no audio file has been generated;
-- no temporary analysis, confidence, reasoning, or source-sentence fields have been added;
-- the response contains raw JSON only, with no Markdown fence or explanatory text.
+- canonicalized/new phrases do not duplicate existing entries;
+- no two entries produce the same StudyBench audio filename stem.
 
-The final result should be a clean, concise, passage-aware StudyBench vocabulary file designed for effective English study.
+If a new phrase would collide by word identity or audio stem, do not add a second conflicting entry.
+
+## 6. Final Validation
+
+Verify that:
+
+- output is the complete valid `<title>.vocabulary.json` with `filetype="vocabulary"` and `words`;
+- `<title>.json` was not modified;
+- existing single words were not deleted and only their `meanings` changed;
+- current-context meanings are represented when identifiable, with only useful common additional senses;
+- phrase extraction is conservative and every new phrase is Passage-supported and canonicalized;
+- phrase meanings use `pos="phrase"`; new phrase phonetics are empty; existing phrase phonetics follow the preservation/reset rule;
+- phrase audio paths use `audio_vocabulary/<normalized_stem>_uk.mp3` and `_us.mp3`;
+- entry order and duplicate rules are respected;
+- no audio file or extra analysis/user-state field was generated;
+- response contains raw JSON only.

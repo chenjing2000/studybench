@@ -12,6 +12,9 @@ class PreparedArticleState:
     article: object
     answers: object
     warnings: tuple
+    book_dir: object
+    article_id: str
+    passage_file: object
 
 
 class ArticleApplication:
@@ -31,6 +34,9 @@ class ArticleApplication:
         self.passage_generator = passage_generator
         self._current_article = None
         self._current_answers = None
+        self._current_book_dir = None
+        self._current_article_id = None
+        self._current_passage_file = None
         self._exercise_dirty = False
         self._default_accent = self._validate_default_accent(default_accent)
         self._accent = self._default_accent
@@ -51,8 +57,15 @@ class ArticleApplication:
     def accent(self):
         return self._accent
 
-    def prepare_passage(self, passage_dir, user_folder):
-        loaded = self.article_repository.load(passage_dir)
+    def prepare_passage(
+        self,
+        passage_file,
+        exercise_file,
+        book_dir,
+        article_id,
+        user_folder,
+    ):
+        loaded = self.article_repository.load(passage_file, exercise_file)
         article = loaded.article
         warnings = []
         if loaded.warning:
@@ -62,7 +75,7 @@ class ArticleApplication:
             saved = None
             try:
                 saved = self.user_data_repository.load_passage_answer(
-                    article.passage_dir, user_folder
+                    book_dir, article_id, user_folder
                 )
             except Exception as error:
                 warnings.append(f"《{article.title}》：用户答案无法加载：{error}")
@@ -81,11 +94,17 @@ class ArticleApplication:
             article=article,
             answers=answers,
             warnings=tuple(warnings),
+            book_dir=book_dir,
+            article_id=str(article_id),
+            passage_file=passage_file,
         )
 
     def commit_prepared(self, state):
         self._current_article = state.article
         self._current_answers = state.answers
+        self._current_book_dir = state.book_dir
+        self._current_article_id = state.article_id
+        self._current_passage_file = state.passage_file
         self._exercise_dirty = False
         self._accent = self._default_accent
 
@@ -98,7 +117,7 @@ class ArticleApplication:
         saved = None
         try:
             saved = self.user_data_repository.load_passage_answer(
-                self._current_article.passage_dir, user_folder
+                self._current_book_dir, self._current_article_id, user_folder
             )
         except Exception as error:
             warnings.append(f"《{self._current_article.title}》：用户答案无法加载：{error}")
@@ -121,7 +140,8 @@ class ArticleApplication:
             raise ValueError("Exercise answers 必须是数组。")
         normalized = self._current_article.validate_answers(answers)
         self.user_data_repository.save_passage_answers(
-            self._current_article.passage_dir,
+            self._current_book_dir,
+            self._current_article_id,
             user_folder,
             self._current_article.exercise_type,
             normalized,
@@ -203,7 +223,7 @@ class ArticleApplication:
                     )
                 )
         return {
-            "passage_dir": str(passage_dir),
+            "passage_path": str(self._current_passage_file),
             "passage_title": self._current_article.title,
             "segment_count": self._current_article.segment_count(),
             "request": PassageGenerationRequest(segments=tuple(segments)),
@@ -219,6 +239,9 @@ class ArticleApplication:
         self.stop_audio()
         self._current_article = None
         self._current_answers = None
+        self._current_book_dir = None
+        self._current_article_id = None
+        self._current_passage_file = None
         self._exercise_dirty = False
         self._accent = self._default_accent
 

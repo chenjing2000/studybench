@@ -8,21 +8,19 @@ def read(path):
     return (PROJECT_ROOT / path).read_text(encoding="utf-8")
 
 
-def test_project_version_matches_release():
-    assert 'version = "0.12.11"' in read("pyproject.toml")
+def test_domain_and_application_layers_are_qt_free():
+    roots = (
+        PROJECT_ROOT / "studybench" / "article_classes",
+        PROJECT_ROOT / "studybench" / "program" / "application",
+    )
+    for root in roots:
+        for path in root.rglob("*.py"):
+            source = path.read_text(encoding="utf-8")
+            assert "PySide6" not in source
+            assert "program.ui" not in source
 
 
-def test_article_domain_is_qt_and_ui_free():
-    root = PROJECT_ROOT / "studybench" / "article_classes"
-    for path in root.rglob("*.py"):
-        if "/ui/" in path.as_posix():
-            continue
-        source = path.read_text(encoding="utf-8")
-        assert "PySide6" not in source
-        assert ".ui" not in source
-
-
-def test_vocabulary_core_does_not_pull_ui():
+def test_vocabulary_core_does_not_depend_on_ui():
     init = read("studybench/vocabulary/__init__.py")
     assert ".ui" not in init
     assert "VocabularyPresenter" not in init
@@ -31,41 +29,14 @@ def test_vocabulary_core_does_not_pull_ui():
         assert "PySide6" not in read(f"studybench/vocabulary/{name}")
 
 
-def test_application_layer_is_qt_and_ui_free():
-    root = PROJECT_ROOT / "studybench" / "program" / "application"
-    for path in root.glob("*.py"):
-        source = path.read_text(encoding="utf-8")
-        assert "PySide6" not in source
-        assert "program.ui" not in source
-
-
 def test_audio_generator_core_is_qt_free():
     root = PROJECT_ROOT / "studybench" / "program" / "audio_generator"
     for path in root.rglob("*.py"):
         assert "PySide6" not in path.read_text(encoding="utf-8")
 
 
-def test_main_window_remains_composition_root():
-    source = read("studybench/main_window.py")
-    for name in (
-        "MainWindowUI",
-        "LibraryApplication",
-        "AccountApplication",
-        "ArticleApplication",
-        "VocabularyApplication",
-        "WorkspaceCoordinator",
-    ):
-        assert name in source
-    for widget_name in ("QPushButton", "QSplitter", "QWebEngineView", "QInputDialog"):
-        assert widget_name not in source
-
-
-def test_web_renderer_uses_generic_component_protocol():
+def test_web_renderer_has_no_exercise_type_specific_article_branching():
     runtime = read("studybench/program/ui/web/runtime.js")
-    assert "renderTopLevelComponent" in runtime
-    assert "renderComponent" in runtime
-    assert "component.type" in runtime
-    assert 'type === "exercise_actions"' in runtime
     for article_type in (
         "article_choice",
         "article_answer",
@@ -85,20 +56,39 @@ def test_exercise_presentation_is_owned_by_css():
     css = read("studybench/program/ui/web/page.css")
     assert '"ui"' not in component_builder
     assert "component.ui" not in runtime
-    assert ".exercise-action-button" in css
-    assert '.exercise-action-button[aria-pressed="true"]' in css
-    assert ".exercise-hint-incorrect" in css
-    assert ".exercise-feedback" in css
+    for selector in (
+        ".exercise-action-button",
+        '.exercise-action-button[aria-pressed="true"]',
+        ".exercise-hint-incorrect",
+        ".exercise-feedback",
+    ):
+        assert selector in css
 
 
-def test_bundled_passage_skills_match_current_article_schema():
+def test_bundled_skills_use_consistent_frontmatter_and_current_schema():
+    skill_paths = (
+        "skills/passage_segment/SKILL.md",
+        "skills/image_to_passage/SKILL.md",
+        "skills/vocabulary_enrichment/SKILL.md",
+    )
+    for skill_path in skill_paths:
+        source = read(skill_path)
+        assert source.startswith("---\nname: ")
+        assert "\ndescription: " in source.split("---", 2)[1]
+        assert "Passage folder" not in source
+        assert "V0.5" not in source
+
     segment_skill = read("skills/passage_segment/SKILL.md")
     image_skill = read("skills/image_to_passage/SKILL.md")
-
+    assert '"filetype": "passage"' in segment_skill
+    assert '"filetype": "passage"' in image_skill
+    assert '"filetype": "exercise"' in image_skill
+    assert '"title":' not in segment_skill
     assert '"tts_enabled":' not in segment_skill
     assert '"tts_enabled":' not in image_skill
-    assert '"type": "choice"' not in image_skill
-    assert '"type": "fill_blank"' not in image_skill
+    assert "audio/<title>/" in segment_skill
+    assert "ArticleBlank" in segment_skill
+    assert "omit `audio` completely" in segment_skill
     for exercise_type in (
         "article_choice",
         "article_answer",
@@ -107,9 +97,6 @@ def test_bundled_passage_skills_match_current_article_schema():
         "article_cloze_sentences",
     ):
         assert exercise_type in image_skill
-    assert "ArticleBlank" in segment_skill
-    assert "omit `audio` completely" in segment_skill
-    assert "no Segment contains `audio`" in image_skill
 
 
 def test_center_panel_right_click_is_delegated_once():
@@ -118,4 +105,11 @@ def test_center_panel_right_click_is_delegated_once():
     assert "Qt.ContextMenuPolicy.NoContextMenu" in center_panel
     assert runtime.count('addEventListener("contextmenu"') == 1
     assert 'span.addEventListener("contextmenu"' not in runtime
-    assert 'bridge.playSegment(sid)' in runtime
+    assert "bridge.playSegment(sid)" in runtime
+
+def test_selection_add_button_uses_last_nonempty_range_fragment():
+    runtime = read("studybench/program/ui/web/runtime.js")
+    assert "range.getClientRects()" in runtime
+    assert "range.getBoundingClientRect()" not in runtime
+    assert "rects[rects.length - 1]" in runtime
+

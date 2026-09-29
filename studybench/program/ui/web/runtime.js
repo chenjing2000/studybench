@@ -713,11 +713,14 @@ function updateSelectionButton() {
     hideSelectionButton();
     return;
   }
-  const rect = range.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) {
+  const rects = Array.from(range.getClientRects()).filter(
+    (rect) => rect.width > 0 && rect.height > 0,
+  );
+  if (!rects.length) {
     hideSelectionButton();
     return;
   }
+  const rect = rects[rects.length - 1];
   selectedText = text;
   addButton.style.left = window.scrollX + rect.right - 4 + "px";
   addButton.style.top = window.scrollY + rect.bottom - 6 + "px";

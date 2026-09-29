@@ -5,8 +5,8 @@ from ..utils import normalize_saved_answers, validate_explanation, validate_numb
 class ArticleAnswer(Article):
     exercise_type = "article_answer"
 
-    def __init__(self, passage_dir, passage_data, exercise_data):
-        super().__init__(passage_dir, passage_data)
+    def __init__(self, passage_file, passage_data, exercise_data):
+        super().__init__(passage_file, passage_data)
         self.exercise = self._validate_exercise(exercise_data)
 
     @property
@@ -15,7 +15,7 @@ class ArticleAnswer(Article):
 
     def _validate_exercise(self, data):
         if not isinstance(data, dict) or data.get("type") != self.exercise_type:
-            raise ValueError("exercise.json type 必须为 article_answer。")
+            raise ValueError("Exercise JSON type 必须为 article_answer。")
         questions = data.get("questions")
         if not isinstance(questions, list) or not questions:
             raise ValueError("article_answer 的 questions 必须是非空数组。")

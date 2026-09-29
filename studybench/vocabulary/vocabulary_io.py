@@ -7,10 +7,7 @@ from .word_cell import WordCell, audio_stem
 
 
 class VocabularyIO:
-    """Strict vocabulary.json serializer/deserializer.
-
-    Schema conversion stays here; generic JSON durability lives in json_store.
-    """
+    """Strict ``filetype=vocabulary`` serializer/deserializer."""
 
     @classmethod
     def load(cls, path, allow_missing=False):
@@ -18,7 +15,7 @@ class VocabularyIO:
         data = read_json(
             path,
             allow_missing=allow_missing,
-            default={"words": []},
+            default={"filetype": "vocabulary", "words": []},
         )
         return cls.from_data(data)
 
@@ -67,17 +64,21 @@ class VocabularyIO:
                     },
                 }
             )
-        data = {"words": words}
+        data = {"filetype": "vocabulary", "words": words}
         cls.validate_data(data)
         return data
 
     @classmethod
     def validate_data(cls, data):
         if not isinstance(data, dict):
-            raise ValueError("vocabulary.json 必须是 JSON object。")
+            raise ValueError("Vocabulary JSON 必须是 JSON object。")
+        if data.get("filetype") != "vocabulary":
+            raise ValueError(
+                f'Vocabulary JSON 的 filetype 必须是 "vocabulary"，实际为 {data.get("filetype")!r}。'
+            )
         words = data.get("words")
         if not isinstance(words, list):
-            raise ValueError("vocabulary.json 的 words 必须是数组。")
+            raise ValueError("Vocabulary JSON 的 words 必须是数组。")
 
         seen_word = set()
         seen_stem = set()

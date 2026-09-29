@@ -16,6 +16,15 @@ def test_passage_log_is_appended_under_cache(tmp_path):
     assert "line two" in text
 
 
+def test_passage_file_log_uses_article_specific_name(tmp_path):
+    passage_file = tmp_path / "Reading One.json"
+    expected = tmp_path / "cache" / "Reading One.studybench.log"
+    assert log_path(passage_file) == expected
+
+    assert write_log(passage_file, "INFO", "Article opened") is True
+    assert "INFO  Article opened" in expected.read_text(encoding="utf-8")
+
+
 def test_log_failure_does_not_raise(tmp_path):
     file_path = tmp_path / "not-a-directory"
     file_path.write_text("x", encoding="utf-8")

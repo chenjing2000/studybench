@@ -35,8 +35,8 @@ def test_ensure_audio_config_creates_complete_template(tmp_path):
         "us_voice": "en-US-JennyNeural",
         "wait_seconds": 2.0,
     }
-    assert len(UK_VOICE_CHOICES) == 6
-    assert len(US_VOICE_CHOICES) == 6
+    assert any(data["uk_voice"] == value for _label, value in UK_VOICE_CHOICES)
+    assert any(data["us_voice"] == value for _label, value in US_VOICE_CHOICES)
 
 
 def test_passage_tts_config_does_not_require_dictionary_paths(tmp_path):

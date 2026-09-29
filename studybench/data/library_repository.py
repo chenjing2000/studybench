@@ -2,18 +2,15 @@ from pathlib import Path
 
 from ..json_store import read_json, write_json_atomic
 from ..vocabulary import VocabularyIO
-from .user_data_repository import (
-    DEFAULT_USER_FOLDER,
-    UserDataRepository,
-)
+from .user_data_repository import DEFAULT_USER_FOLDER, UserDataRepository
 
 
 class LibraryRepository:
-    """Single owner of Library navigation metadata and book.json indexes.
+    """Load Book metadata and derive navigation directly from disk.
 
-    ``book.json`` is metadata plus a derived index.  ``passages`` and
-    ``userdata`` are reconciled from the actual Book directories whenever a
-    Library is loaded; the filesystem is the source of truth for membership.
+    ``book.json`` no longer stores a Passage index.  Every Library load scans
+    each Book recursively.  Folder names become navigation folders and every
+    valid ``<title>.json`` with ``filetype=passage`` becomes an Article node.
     """
 
     def __init__(
@@ -32,7 +29,10 @@ class LibraryRepository:
             raise ValueError(f"Library 文件夹不存在：{library_root}")
 
         try:
-            children = list(library_root.iterdir())
+            children = sorted(
+                library_root.iterdir(),
+                key=lambda path: path.name.casefold(),
+            )
         except Exception as error:
             raise ValueError(f"Library 文件夹无法扫描：{error}") from None
 
@@ -40,14 +40,18 @@ class LibraryRepository:
         warnings = []
         for child in children:
             try:
-                is_book_dir = child.is_dir() and (child / "book.json").exists()
+                is_book_dir = (
+                    child.is_dir()
+                    and not child.is_symlink()
+                    and (child / "book.json").is_file()
+                )
             except Exception as error:
                 warnings.append(f"无法检查 Library 项目 {child.name}：{error}")
                 continue
             if not is_book_dir:
                 continue
             try:
-                plan = self._prepare_book_reconciliation(child)
+                plan = self._prepare_book(child)
             except Exception as error:
                 warnings.append(str(error))
                 continue
@@ -56,7 +60,7 @@ class LibraryRepository:
 
         books = []
         for plan in prepared:
-            book_item, commit_warnings = self._commit_book_reconciliation(plan)
+            book_item, commit_warnings = self._commit_book(plan)
             warnings.extend(commit_warnings)
             if book_item is not None:
                 books.append(book_item)
@@ -93,20 +97,17 @@ class LibraryRepository:
             raise ValueError("该用户名对应的账户已经存在。")
         references.append(folder_name)
         book["userdata"] = references
+        book.pop("passages", None)
         write_json_atomic(book_path, book)
 
     def user_references(self, book_dir, user_folder_validator):
         book = self.read_book(book_dir)
         return self._read_user_references_from_book(book, user_folder_validator)
 
-    @staticmethod
-    def book_dir_for_passage(passage_dir):
-        return Path(passage_dir).parent.parent
-
     # ------------------------------------------------------------------
-    # Reconciliation prepare phase: read/validate only, no writes.
+    # Prepare phase: read and validate only, no writes.
     # ------------------------------------------------------------------
-    def _prepare_book_reconciliation(self, book_dir):
+    def _prepare_book(self, book_dir):
         book_dir = Path(book_dir)
         try:
             book = read_json(book_dir / "book.json")
@@ -116,124 +117,234 @@ class LibraryRepository:
             ) from None
         self._validate_book_header(book, book_dir.name)
         bookname = book["bookname"]
-        warnings = []
 
-        passage_scan = self._scan_passages(book_dir, bookname)
-        warnings.extend(passage_scan["warnings"])
-
+        children, content_warnings = self._scan_content_folder(
+            book_dir,
+            book_dir,
+            bookname,
+            is_book_root=True,
+        )
         user_scan = self._scan_users(book_dir, bookname)
-        warnings.extend(user_scan["warnings"])
 
+        warnings = list(content_warnings)
+        warnings.extend(user_scan["warnings"])
         return {
             "book_dir": book_dir,
             "book": book,
             "bookname": bookname,
-            "passage_scan": passage_scan,
+            "children": children,
             "user_scan": user_scan,
             "warnings": warnings,
         }
 
-    def _scan_passages(self, book_dir, bookname):
-        passages_root = book_dir / "passages"
+    def _scan_content_folder(self, folder, book_dir, bookname, *, is_book_root=False):
         warnings = []
-
-        if not passages_root.exists():
-            warnings.append(f"《{bookname}》：缺少 passages 文件夹。")
-            return {
-                "complete": True,
-                "valid_names": [],
-                "items_by_key": {},
-                "warnings": warnings,
-            }
-        if not passages_root.is_dir():
-            warnings.append(f"《{bookname}》：passages 不是文件夹，无法同步 Passage 索引。")
-            return {
-                "complete": False,
-                "valid_names": [],
-                "items_by_key": {},
-                "warnings": warnings,
-            }
-
         try:
-            entries = list(passages_root.iterdir())
+            entries = sorted(folder.iterdir(), key=lambda path: path.name.casefold())
         except Exception as error:
-            warnings.append(f"《{bookname}》：passages 文件夹无法扫描：{error}")
-            return {
-                "complete": False,
-                "valid_names": [],
-                "items_by_key": {},
-                "warnings": warnings,
-            }
+            relative = self._relative_label(folder, book_dir)
+            warnings.append(f"《{bookname}》/{relative}：文件夹无法扫描：{error}")
+            return [], warnings
 
-        valid_names = []
-        items_by_key = {}
+        files = []
+        subdirs = []
         for entry in entries:
             try:
-                if not entry.is_dir():
+                if entry.is_symlink():
                     continue
+                if entry.is_dir():
+                    if self._skip_directory(entry, book_dir):
+                        continue
+                    subdirs.append(entry)
+                elif entry.is_file():
+                    files.append(entry)
             except Exception as error:
                 warnings.append(
-                    f"《{bookname}》：无法检查 Passage 项目 {entry.name}：{error}"
+                    f"《{bookname}》/{self._relative_label(folder, book_dir)}："
+                    f"无法检查 {entry.name}：{error}"
                 )
-                continue
 
-            folder_name = entry.name
+        ordinary_json = []
+        companion_files = []
+        for path in files:
+            lower = path.name.casefold()
+            if path.suffix.casefold() != ".json":
+                continue
+            if is_book_root and lower == "book.json":
+                continue
+            if lower.endswith(".exercise.json") or lower.endswith(".vocabulary.json"):
+                companion_files.append(path)
+            else:
+                ordinary_json.append(path)
+
+        article_nodes = []
+        passage_candidates = {}
+        for passage_file in ordinary_json:
             try:
-                self._validate_passage_folder_reference(folder_name, bookname)
-            except Exception as error:
-                warnings.append(str(error))
-                continue
-
-            try:
-                loaded = self.article_repository.load(entry)
+                data = read_json(passage_file)
             except Exception as error:
                 warnings.append(
-                    f"《{bookname}》：Passage {folder_name} 无法加载：{error}"
+                    f"《{bookname}》/{self._relative_file_label(passage_file, book_dir)} "
+                    f"无法读取：{error}"
+                )
+                continue
+            if not isinstance(data, dict):
+                warnings.append(
+                    f"《{bookname}》/{self._relative_file_label(passage_file, book_dir)} "
+                    "必须是 JSON object。"
                 )
                 continue
 
-            key = folder_name.casefold()
-            if key in items_by_key:
-                warnings.append(
-                    f"《{bookname}》：Passage 文件夹名大小写冲突：{folder_name}。"
+            filetype = data.get("filetype")
+            if filetype == "passage":
+                passage_candidates[passage_file.name.casefold()] = passage_file
+                node, item_warnings = self._build_article_node(
+                    passage_file,
+                    book_dir,
+                    bookname,
                 )
-                continue
-
-            item = {
-                "title": loaded.article.title,
-                "folder": folder_name,
-                "path": str(entry),
-            }
-            valid_names.append(folder_name)
-            items_by_key[key] = item
-
-            if loaded.warning:
+                warnings.extend(item_warnings)
+                if node is not None:
+                    article_nodes.append(node)
+            elif filetype in {"exercise", "vocabulary"}:
+                required_suffix = f".{filetype}.json"
                 warnings.append(
-                    f"《{bookname}》/ Passage {folder_name}：{loaded.warning}"
+                    f"《{bookname}》/{self._relative_file_label(passage_file, book_dir)}："
+                    f'{filetype} 文件必须使用 "<title>{required_suffix}" 命名，已忽略。'
+                )
+            # Unknown filetype is intentionally ignored.
+
+        warnings.extend(
+            self._orphan_companion_warnings(
+                companion_files,
+                passage_candidates,
+                book_dir,
+                bookname,
+            )
+        )
+
+        folder_nodes = []
+        for subdir in subdirs:
+            children, child_warnings = self._scan_content_folder(
+                subdir,
+                book_dir,
+                bookname,
+            )
+            warnings.extend(child_warnings)
+            if children:
+                folder_nodes.append(
+                    {
+                        "kind": "folder",
+                        "name": subdir.name,
+                        "children": children,
+                    }
                 )
 
-            vocabulary_path = entry / "vocabulary.json"
-            if vocabulary_path.exists():
-                if not vocabulary_path.is_file():
+        children = article_nodes + folder_nodes
+        children.sort(key=lambda node: (node["name"].casefold(), node["kind"]))
+        return children, warnings
+
+    def _build_article_node(self, passage_file, book_dir, bookname):
+        warnings = []
+        title = passage_file.stem
+        exercise_file = passage_file.with_name(f"{title}.exercise.json")
+        vocabulary_file = passage_file.with_name(f"{title}.vocabulary.json")
+        exercise_arg = exercise_file if exercise_file.exists() else None
+
+        try:
+            loaded = self.article_repository.load(passage_file, exercise_arg)
+        except Exception as error:
+            warnings.append(
+                f"《{bookname}》/{self._relative_file_label(passage_file, book_dir)} "
+                f"无法加载：{error}"
+            )
+            return None, warnings
+
+        if loaded.warning:
+            warnings.append(
+                f"《{bookname}》/{self._relative_file_label(passage_file, book_dir)}："
+                f"{loaded.warning}"
+            )
+
+        vocabulary_arg = vocabulary_file if vocabulary_file.exists() else None
+        if vocabulary_arg is not None:
+            if not vocabulary_arg.is_file():
+                warnings.append(
+                    f"《{bookname}》/{self._relative_file_label(vocabulary_arg, book_dir)} "
+                    "不是普通文件。"
+                )
+            else:
+                try:
+                    self.vocabulary_io.load(vocabulary_arg)
+                except Exception as error:
                     warnings.append(
-                        f"《{bookname}》/ Passage {folder_name}：vocabulary.json 不是普通文件。"
+                        f"《{bookname}》/{self._relative_file_label(vocabulary_arg, book_dir)} "
+                        f"无法加载：{error}"
                     )
-                else:
-                    try:
-                        self.vocabulary_io.load(vocabulary_path)
-                    except Exception as error:
-                        warnings.append(
-                            f"《{bookname}》/ Passage {folder_name}："
-                            f"vocabulary.json 无法加载：{error}"
-                        )
 
         return {
-            "complete": True,
-            "valid_names": valid_names,
-            "items_by_key": items_by_key,
-            "warnings": warnings,
-        }
+            "kind": "article",
+            "name": title,
+            "passage_file": str(passage_file),
+            "exercise_file": str(exercise_file) if exercise_file.exists() else None,
+            "vocabulary_file": str(vocabulary_file) if vocabulary_file.exists() else None,
+            "book_path": str(book_dir),
+            "article_id": passage_file.relative_to(book_dir).as_posix(),
+        }, warnings
 
+    def _orphan_companion_warnings(
+        self,
+        companion_files,
+        passage_candidates,
+        book_dir,
+        bookname,
+    ):
+        warnings = []
+        for path in companion_files:
+            lower = path.name.casefold()
+            if lower.endswith(".exercise.json"):
+                base_name = path.name[: -len(".exercise.json")] + ".json"
+            else:
+                base_name = path.name[: -len(".vocabulary.json")] + ".json"
+            if base_name.casefold() in passage_candidates:
+                continue
+            warnings.append(
+                f"《{bookname}》/{self._relative_file_label(path, book_dir)}："
+                f"没有对应的 Passage {base_name}，已忽略。"
+            )
+        return warnings
+
+    @staticmethod
+    def _skip_directory(path, book_dir):
+        name = path.name
+        if name.startswith(".") or name == "__pycache__":
+            return True
+        try:
+            if path.resolve() == (book_dir / "userdata").resolve():
+                return True
+        except OSError:
+            if path == book_dir / "userdata":
+                return True
+        return False
+
+    @staticmethod
+    def _relative_label(path, book_dir):
+        try:
+            relative = path.relative_to(book_dir).as_posix()
+        except ValueError:
+            relative = path.name
+        return relative or "."
+
+    @staticmethod
+    def _relative_file_label(path, book_dir):
+        try:
+            return path.relative_to(book_dir).as_posix()
+        except ValueError:
+            return path.name
+
+    # ------------------------------------------------------------------
+    # Userdata reconciliation remains an indexed Book concern.
+    # ------------------------------------------------------------------
     def _scan_users(self, book_dir, bookname):
         userdata_root = book_dir / "userdata"
         warnings = []
@@ -255,7 +366,7 @@ class LibraryRepository:
             }
 
         try:
-            entries = list(userdata_root.iterdir())
+            entries = sorted(userdata_root.iterdir(), key=lambda path: path.name.casefold())
         except Exception as error:
             warnings.append(f"《{bookname}》：userdata 文件夹无法扫描：{error}")
             return {
@@ -269,7 +380,7 @@ class LibraryRepository:
         seen = set()
         for entry in entries:
             try:
-                if not entry.is_dir():
+                if not entry.is_dir() or entry.is_symlink():
                     continue
             except Exception as error:
                 warnings.append(
@@ -311,7 +422,6 @@ class LibraryRepository:
                 f"《{bookname}》：默认用户 {DEFAULT_USER_FOLDER} 无法加载：用户路径不是文件夹。"
             )
         create_default = not default_path.exists()
-        # Existing-but-invalid xiaoxin was already diagnosed above.  Never repair it.
         return {
             "complete": True,
             "valid_names": valid_names,
@@ -320,26 +430,16 @@ class LibraryRepository:
         }
 
     # ------------------------------------------------------------------
-    # Commit phase: create a missing default user, then atomically update
-    # changed book.json indexes.  UI state is committed by LibraryApplication
-    # only after this method returns.
+    # Commit phase: create missing xiaoxin and update only userdata metadata.
+    # Any legacy ``passages`` key is removed as part of the destructive upgrade.
     # ------------------------------------------------------------------
-    def _commit_book_reconciliation(self, plan):
+    def _commit_book(self, plan):
         book_dir = plan["book_dir"]
         bookname = plan["bookname"]
         original = plan["book"]
         book = dict(original)
         warnings = []
-
-        passage_scan = plan["passage_scan"]
-        if passage_scan["complete"]:
-            new_passages = self._reconcile_membership_order(
-                original.get("passages"),
-                passage_scan["valid_names"],
-            )
-            book["passages"] = new_passages
-        else:
-            new_passages = None
+        book.pop("passages", None)
 
         user_scan = plan["user_scan"]
         valid_users = list(user_scan["valid_names"])
@@ -354,12 +454,11 @@ class LibraryRepository:
                 valid_users.insert(0, DEFAULT_USER_FOLDER)
 
         if user_scan["complete"]:
-            new_userdata = self._reconcile_membership_order(
+            book["userdata"] = self._reconcile_membership_order(
                 original.get("userdata"),
                 valid_users,
                 preferred_first=DEFAULT_USER_FOLDER,
             )
-            book["userdata"] = new_userdata
 
         if book != original:
             try:
@@ -367,16 +466,8 @@ class LibraryRepository:
             except Exception as error:
                 warnings.append(f"《{bookname}》：无法更新 book.json：{error}")
 
-        if not passage_scan["complete"]:
-            return None, warnings
-
-        items = []
-        for folder_name in book.get("passages", []):
-            item = passage_scan["items_by_key"].get(str(folder_name).casefold())
-            if item is not None:
-                items.append(item)
-
-        if not items:
+        children = plan["children"]
+        if not children:
             warnings.append(f"《{bookname}》：没有可正常加载的 Passage，本 Book 未加入目录树。")
             return None, warnings
 
@@ -384,17 +475,11 @@ class LibraryRepository:
             "bookname": bookname,
             "folder": book_dir.name,
             "path": str(book_dir),
-            "passages": items,
+            "children": children,
         }, warnings
 
     @staticmethod
-    def _reconcile_membership_order(
-        old_value,
-        valid_names,
-        *,
-        preferred_first=None,
-    ):
-        """Sync membership while preserving manually maintained existing order."""
+    def _reconcile_membership_order(old_value, valid_names, *, preferred_first=None):
         valid_by_key = {name.casefold(): name for name in valid_names}
         result = []
         seen = set()
@@ -418,9 +503,9 @@ class LibraryRepository:
 
         for name in valid_names:
             key = name.casefold()
-            if key in seen or key not in valid_by_key:
+            if key in seen:
                 continue
-            result.append(valid_by_key[key])
+            result.append(name)
             seen.add(key)
         return result
 
@@ -457,16 +542,3 @@ class LibraryRepository:
             raise ValueError(f"未加载《{folder_label}》：bookname 不能为空。")
         if bookname != bookname.strip():
             raise ValueError(f"未加载《{bookname.strip()}》：bookname 不能包含首尾空格。")
-
-    @staticmethod
-    def _validate_passage_folder_reference(folder_name, bookname):
-        if not isinstance(folder_name, str) or not folder_name.strip():
-            raise ValueError(f"《{bookname}》：Passage 文件夹名不能为空。")
-        if folder_name != folder_name.strip():
-            raise ValueError(
-                f"《{bookname}》：Passage 文件夹名不能包含首尾空格：{folder_name}"
-            )
-        if folder_name in (".", "..") or "/" in folder_name or "\\" in folder_name:
-            raise ValueError(
-                f"《{bookname}》：Passage 必须是 passages 下的直接子文件夹：{folder_name}"
-            )

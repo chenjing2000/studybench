@@ -202,7 +202,7 @@ class MainWindow(QMainWindow):
             else:
                 self.show_status(f"上次使用的 Library 不存在：{saved}")
             return
-        sample_library = self.project_root / "example_library_english"
+        sample_library = self.project_root / "library_en"
         if sample_library.exists() and sample_library.is_dir():
             self._load_library_now(sample_library)
 
@@ -524,7 +524,8 @@ class MainWindow(QMainWindow):
         passage = self.library_application.current_passage_path
         if not passage:
             return
-        default_path = Path(passage) / "vocabulary_export.json"
+        passage_file = Path(passage)
+        default_path = passage_file.parent / f"{passage_file.stem}.vocabulary_export.json"
         path = self.right_panel.choose_export_path(default_path)
         if not path:
             return
@@ -538,7 +539,7 @@ class MainWindow(QMainWindow):
         passage = self.library_application.current_passage_path
         if not passage:
             return
-        path = self.right_panel.choose_import_path(passage)
+        path = self.right_panel.choose_import_path(Path(passage).parent)
         if not path:
             return
         try:
@@ -615,24 +616,24 @@ class MainWindow(QMainWindow):
         if self.audio_task_runner.is_running:
             return False
         self._set_audio_job_buttons_enabled(False)
-        self._log_audio_job_started(job["passage_dir"], label, title, detail)
+        self._log_audio_job_started(job["passage_path"], label, title, detail)
         started = self.audio_task_runner.start(
-            job_kind, job["passage_dir"], task, thread_name=thread_name
+            job_kind, job["passage_path"], task, thread_name=thread_name
         )
         if not started:
             self._set_audio_job_buttons_enabled(True)
         return started
 
-    def _audio_generation_finished(self, passage_dir, job_kind, result, error_text):
+    def _audio_generation_finished(self, passage_path, job_kind, result, error_text):
         if error_text:
-            write_log(passage_dir, "ERROR", f"Audio generation failed: {error_text}")
+            write_log(passage_path, "ERROR", f"Audio generation failed: {error_text}")
             message = (
                 "Vocabulary gen audio 失败：" + error_text
                 if job_kind == VOCABULARY_AUDIO_JOB
                 else "Gen Audio 失败：" + error_text
             )
         else:
-            self._log_audio_generation_result(passage_dir, result)
+            self._log_audio_generation_result(passage_path, result)
             partial = bool(getattr(result, "incomplete", False))
             label = "Vocabulary gen audio" if job_kind == VOCABULARY_AUDIO_JOB else "Gen Audio"
             if partial:
@@ -644,7 +645,7 @@ class MainWindow(QMainWindow):
 
         if (
             job_kind == VOCABULARY_AUDIO_JOB
-            and self._same_path(self.library_application.current_passage_path, passage_dir)
+            and self._same_path(self.library_application.current_passage_path, passage_path)
         ):
             try:
                 self.vocabulary_application.reload(self.library_application.current_passage_path)
@@ -655,18 +656,18 @@ class MainWindow(QMainWindow):
         self.show_status(message)
 
     @staticmethod
-    def _log_audio_job_started(passage_dir, label, title, detail):
-        write_log(passage_dir, "INFO", f"{label} started")
-        write_log(passage_dir, "INFO", f"Passage: {title}")
-        write_log(passage_dir, "INFO", detail)
+    def _log_audio_job_started(passage_path, label, title, detail):
+        write_log(passage_path, "INFO", f"{label} started")
+        write_log(passage_path, "INFO", f"Passage: {title}")
+        write_log(passage_path, "INFO", detail)
 
     @staticmethod
-    def _log_audio_generation_result(passage_dir, result):
+    def _log_audio_generation_result(passage_path, result):
         stats = getattr(result, "stats", None)
         if stats is None:
             return
         write_log(
-            passage_dir,
+            passage_path,
             "INFO",
             "Audio generation: "
             f"kind={stats.kind}, total={stats.items_total}, "
@@ -674,7 +675,7 @@ class MainWindow(QMainWindow):
             f"failed={stats.items_failed}",
         )
         for error in stats.errors:
-            write_log(passage_dir, "ERROR", error)
+            write_log(passage_path, "ERROR", error)
 
     def _set_audio_job_buttons_enabled(self, enabled):
         self.center_panel.set_gen_audio_enabled(

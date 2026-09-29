@@ -4,17 +4,6 @@ SID_PATTERN = re.compile(r"^s(\d{3})$")
 PLACEHOLDER_PATTERN = re.compile(r"\[\[(\d+)\]\]")
 
 
-def validate_title(data):
-    if not isinstance(data, dict):
-        raise ValueError("passage.json 必须是 JSON object。")
-    title = data.get("title")
-    if not isinstance(title, str) or not title.strip():
-        raise ValueError("passage.json 的 title 不能为空。")
-    if title != title.strip():
-        raise ValueError("passage.json 的 title 不能包含首尾空格。")
-    return title
-
-
 def validate_next_sid(value):
     if not isinstance(value, int):
         raise ValueError("next_sid 必须是整数。")
@@ -59,7 +48,7 @@ def passage_has_placeholders(data):
 
 def iter_raw_segments(data):
     if not isinstance(data, dict):
-        raise ValueError("passage.json 必须是 JSON object。")
+        raise ValueError("Passage JSON 必须是 JSON object。")
     paragraphs = data.get("paragraphs")
     if not isinstance(paragraphs, list) or not paragraphs:
         raise ValueError("paragraphs 必须是非空数组。")
@@ -75,8 +64,9 @@ def iter_raw_segments(data):
             yield raw_segment
 
 
-def validate_base_passage(data, *, allow_audio, require_placeholders):
-    title = validate_title(data)
+def validate_base_passage(data, *, title, allow_audio, require_placeholders):
+    if not isinstance(title, str) or not title.strip():
+        raise ValueError("Article title 不能为空。")
     next_sid = validate_next_sid(data.get("next_sid"))
 
     raw_paragraphs = data.get("paragraphs")
@@ -118,8 +108,8 @@ def validate_base_passage(data, *, allow_audio, require_placeholders):
                 audio = raw_segment.get("audio")
                 if not isinstance(audio, dict):
                     raise ValueError(f"{sid} 缺少 audio。")
-                expected_uk = f"audio/{sid}_uk.mp3"
-                expected_us = f"audio/{sid}_us.mp3"
+                expected_uk = f"audio/{title}/{sid}_uk.mp3"
+                expected_us = f"audio/{title}/{sid}_us.mp3"
                 if audio.get("uk") != expected_uk:
                     raise ValueError(f"{sid} 的 uk 音频路径应为 {expected_uk}。")
                 if audio.get("us") != expected_us:
@@ -153,7 +143,6 @@ def validate_base_passage(data, *, allow_audio, require_placeholders):
             raise ValueError("ArticleBlank 的 [[n]] 必须从 [[1]] 开始连续编号。")
 
     return {
-        "title": title,
         "next_sid": next_sid,
         "paragraphs": paragraphs,
         "placeholders": placeholders,
@@ -215,7 +204,7 @@ def validate_unique_numbers(items, label):
 def validate_placeholder_alignment(placeholders, numbers, label):
     if sorted(placeholders) != sorted(numbers):
         raise ValueError(
-            f"{label} 的 item number 必须与 passage.json 中的 [[n]] 一一对应。"
+            f"{label} 的 item number 必须与 Passage JSON 中的 [[n]] 一一对应。"
         )
 
 

@@ -18,7 +18,7 @@ class LibraryTree(QTreeWidget):
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         tree_font = self.font()
-        tree_font.setPointSize(11)
+        tree_font.setPointSize(10)
         self.setFont(tree_font)
         self.itemClicked.connect(self._item_clicked)
 
@@ -35,48 +35,86 @@ class LibraryTree(QTreeWidget):
 
     def set_library(self, books):
         self.clear()
-        first_passage_item = None
+        first_article_item = None
         for book in books:
             book_item = QTreeWidgetItem([book["bookname"]])
             book_font = book_item.font(0)
-            book_font.setPointSize(11)
+            book_font.setPointSize(10)
             book_item.setFont(0, book_font)
-            book_item.setData(0, Qt.ItemDataRole.UserRole, {"kind": "book", "path": book["path"]})
+            book_item.setData(
+                0,
+                Qt.ItemDataRole.UserRole,
+                {"kind": "book", "path": book["path"]},
+            )
             book_item.setFlags(book_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.addTopLevelItem(book_item)
-            for passage in book["passages"]:
-                passage_item = QTreeWidgetItem([passage["title"]])
-                font = passage_item.font(0)
-                font.setPointSize(10)
-                font.setBold(False)
-                passage_item.setFont(0, font)
-                passage_item.setData(0, Qt.ItemDataRole.UserRole, {"kind": "passage", "path": passage["path"]})
-                book_item.addChild(passage_item)
-                if first_passage_item is None:
-                    first_passage_item = passage_item
+
+            for node in book.get("children", []):
+                item, first_found = self._add_node(book_item, node)
+                if first_article_item is None and first_found is not None:
+                    first_article_item = first_found
             book_item.setExpanded(True)
-        if first_passage_item is not None:
-            self.setCurrentItem(first_passage_item)
-        return first_passage_item
+
+        if first_article_item is not None:
+            self.setCurrentItem(first_article_item)
+        return first_article_item
+
+    def _add_node(self, parent_item, node):
+        item = QTreeWidgetItem([node["name"]])
+        font = item.font(0)
+        font.setPointSize(10)
+        font.setBold(False)
+        item.setFont(0, font)
+
+        kind = node.get("kind")
+        if kind == "folder":
+            item.setData(0, Qt.ItemDataRole.UserRole, {"kind": "folder"})
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            parent_item.addChild(item)
+            first_article = None
+            for child in node.get("children", []):
+                _child_item, found = self._add_node(item, child)
+                if first_article is None and found is not None:
+                    first_article = found
+            return item, first_article
+
+        item.setData(
+            0,
+            Qt.ItemDataRole.UserRole,
+            {"kind": "article", "path": node["passage_file"]},
+        )
+        parent_item.addChild(item)
+        return item, item
 
     def emit_passage_for_item(self, item):
         if item is None:
             return
         data = item.data(0, Qt.ItemDataRole.UserRole)
-        if isinstance(data, dict) and data.get("kind") == "passage":
+        if isinstance(data, dict) and data.get("kind") == "article":
             self.passage_selected.emit(str(data["path"]))
 
     def select_passage(self, passage_path):
         target = str(Path(passage_path))
         for book_index in range(self.topLevelItemCount()):
-            book_item = self.topLevelItem(book_index)
-            for passage_index in range(book_item.childCount()):
-                item = book_item.child(passage_index)
-                data = item.data(0, Qt.ItemDataRole.UserRole)
-                if isinstance(data, dict) and data.get("kind") == "passage" and str(data.get("path", "")) == target:
-                    self.setCurrentItem(item)
-                    return True
+            found = self._find_article_item(self.topLevelItem(book_index), target)
+            if found is not None:
+                self.setCurrentItem(found)
+                return True
         return False
+
+    def _find_article_item(self, item, target):
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if (
+            isinstance(data, dict)
+            and data.get("kind") == "article"
+            and str(data.get("path", "")) == target
+        ):
+            return item
+        for index in range(item.childCount()):
+            found = self._find_article_item(item.child(index), target)
+            if found is not None:
+                return found
+        return None
 
     def _item_clicked(self, item, column):
         self.emit_passage_for_item(item)

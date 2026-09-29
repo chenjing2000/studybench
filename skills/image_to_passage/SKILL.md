@@ -1,148 +1,134 @@
 ---
 name: image-to-passage
-description: Use when English reading material is supplied as one or more textbook/page images and StudyBench Passage and Exercise JSON files need to be created from those images.
+description: Convert one or more English textbook/page images into StudyBench <title>.json and, when supported exercises are present, <title>.exercise.json.
 ---
 
 # Image to Passage
 
-## Purpose
+## 1. Purpose
 
-Convert one or more English reading images into current StudyBench data files:
+Convert English reading images into current StudyBench files:
 
-- required `passage.json` for the Passage body;
-- optional `exercise.json` when one supported Exercise type is present.
+- required `<title>.json` with `filetype: "passage"`;
+- optional `<title>.exercise.json` with `filetype: "exercise"`.
 
-Use the images as the source of truth. Preserve the article and questions faithfully. Do not mix exercise text into the Passage body.
+Use the images as the source of truth. Preserve article and question text faithfully. Do not mix Exercise text into the Passage body.
 
-The current schema has no `tts_enabled` field. Complete Articles declare standard Segment audio paths; ArticleBlank Passages contain `[[n]]` placeholders and omit Segment `audio` completely.
+Output valid raw JSON files only; do not wrap JSON in Markdown or add commentary inside the files.
 
-## Input
+## 2. Input and Filenames
 
-- one or more English reading images, in reading order;
-- optional explicit Passage title;
-- optional output Passage folder.
+Input may include:
 
-When multiple images overlap, recognize the overlap and keep duplicated source text only once.
+- one or more images in reading order;
+- an optional explicit Passage title;
+- an optional output directory.
 
-## Title
+When images overlap, keep duplicated source text only once.
 
-1. If an explicit title is supplied by the user, use it.
-2. Otherwise, if the source image contains a genuine article title, transcribe that title.
-3. If the source contains no genuine title, draft a concise English title from the Passage body and continue automatically. Do not stop to ask for a title. The user may correct the drafted title later.
+Resolve `<title>` in this order:
 
-Do not treat page headers, unit labels, exercise headings, captions, or other textbook metadata as the Passage title.
+1. use an explicit user-supplied title;
+2. otherwise transcribe the genuine article title shown in the source;
+3. otherwise draft a concise English title from the Passage body and continue without asking.
 
-## Extract the Passage body
+Do not use page headers, unit labels, Exercise headings, captions, or other textbook metadata as the title.
 
-Read the article in normal reading order and keep only the English Passage body.
+The filename stem is the authoritative Article title. Write:
 
-Exclude material that is not part of the body, including:
+```text
+<title>.json
+<title>.exercise.json
+```
 
-- exercise questions and answer options outside the Passage body;
-- page numbers, unit labels, running headers/footers, QR-code text, and similar textbook metadata;
-- decorative image text or captions that are not part of the Passage;
-- printed Chinese vocabulary glosses that are not part of the English body.
+Do not store `title` inside Passage JSON. The title must therefore be valid as a filename.
 
-Preserve spelling, capitalization, punctuation, numbers, quotation marks, and word order. Do not paraphrase or translate the English body.
+## 3. Passage Extraction
 
-Restore natural Paragraphs rather than copying visual line wrapping. Formatting-only line breaks inside one Paragraph become normal spaces. When a word is clearly split only because of line-end hyphenation/layout, restore the original whole word.
+Read the Passage in normal reading order and keep only its English body.
 
-## Recover Passage blanks
+Exclude non-body material such as:
 
-If the Passage body itself contains genuine answer blanks, normalize those blanks to StudyBench placeholders in reading order:
+- separate questions and answer options;
+- page numbers, unit labels, running headers/footers, QR-code text;
+- decorative image text or unrelated captions;
+- printed Chinese vocabulary glosses not belonging to the English body.
+
+Preserve spelling, capitalization, punctuation, numbers, quotation marks, and word order. Do not paraphrase or translate the Passage.
+
+Restore natural Paragraphs instead of copying visual line wraps. Join formatting-only line breaks with one ASCII space. Restore a word split only by line-end layout/hyphenation when the original word is clear.
+
+If genuine blanks occur inside the Passage body, normalize them in reading order as:
 
 ```text
 [[1]], [[2]], [[3]], ...
 ```
 
-Use placeholders only for blanks that belong inside the Passage body. Do not insert placeholders for separate questions below or beside an otherwise complete Passage.
+Do not create placeholders for separate questions outside the Passage. Each placeholder number must occur exactly once and numbering must be continuous from 1.
 
-Each placeholder number must appear exactly once and numbering must be continuous from 1.
-
-After blank recovery, follow `../passage_segment/SKILL.md`:
-
-- no placeholders → complete Article with Segment audio paths;
-- placeholders present → ArticleBlank with no Segment `audio` properties.
-
-## Create `passage.json`
-
-For a newly created Passage:
-
-- SID starts at `s001` and increases in reading order across the entire Passage;
-- SIDs are lowercase and Passage-wide unique;
-- `next_sid` is one greater than the largest emitted SID number;
-- do not write `tts_enabled`.
-
-Complete Article example:
+The Passage JSON always begins with:
 
 ```json
 {
-  "title": "A concise Passage title",
-  "next_sid": 2,
-  "paragraphs": [
-    {
-      "paragraph": [
-        {
-          "sid": "s001",
-          "text": "A complete sentence.",
-          "audio": {
-            "uk": "audio/s001_uk.mp3",
-            "us": "audio/s001_us.mp3"
-          }
-        }
-      ]
-    }
-  ]
+  "filetype": "passage"
 }
 ```
 
-ArticleBlank example:
+Then follow `../passage_segment/SKILL.md` exactly:
+
+- no placeholders → Article with Segment audio paths;
+- placeholders → ArticleBlank with no Segment `audio` fields;
+- SID starts at `s001`, is Passage-wide unique, and `next_sid` is correct;
+- do not write `title` or `tts_enabled`.
+
+For Article, audio paths are:
+
+```text
+audio/<title>/<sid>_uk.mp3
+audio/<title>/<sid>_us.mp3
+```
+
+## 4. Exercise Extraction
+
+Inspect the same images for an Exercise belonging to the Passage. If none of the supported types is present, create only `<title>.json`.
+
+StudyBench supports exactly:
+
+| `type` | Use | Main payload |
+|---|---|---|
+| `article_choice` | multiple-choice questions on a complete Article | `questions` with `prompt`, `options` |
+| `article_answer` | free-response questions on a complete Article | `questions` with `prompt` |
+| `article_cloze` | Passage blanks, each with its own option set | `items` with `options` |
+| `article_cloze_words` | Passage blanks answered by typed word/phrase | `items` with `cue` |
+| `article_cloze_sentences` | Passage blanks using one shared sentence pool | top-level `options` + `items` |
+
+Do not emit legacy or unsupported Exercise types. Do not merge unrelated Exercise families into one file.
+
+Every Exercise file starts with:
 
 ```json
 {
-  "title": "A concise blank Passage title",
-  "next_sid": 2,
-  "paragraphs": [
-    {
-      "paragraph": [
-        {
-          "sid": "s001",
-          "text": "The sentence contains [[1]] blank."
-        }
-      ]
-    }
-  ]
+  "filetype": "exercise",
+  "type": "article_choice"
 }
 ```
 
-The examples are structural only. Actual text must come from the supplied images.
+Use the actual supported `type` and required payload.
 
-## Detect and create Exercises
+### Common answer-unit rules
 
-After extracting the Passage, inspect the same images for exercises belonging to that Passage.
+- `number` is a unique positive integer;
+- `reference_answer` is a non-empty string;
+- `explanation` is a string; keep it concise and source-based;
+- never store user state such as `answer`, `user_answer`, `user_note`, `username`, `userdata`, or `correct`.
 
-If no supported Exercise is present, create only `passage.json`.
-
-The current StudyBench program supports exactly these Exercise types:
-
-- `article_choice`
-- `article_answer`
-- `article_cloze`
-- `article_cloze_words`
-- `article_cloze_sentences`
-
-Do not emit legacy types such as `choice` or `fill_blank`.
-
-`exercise.json` represents one Exercise family. Do not merge unrelated Exercise families into one file. If the source contains an unsupported Exercise form, preserve the Passage faithfully and omit that unsupported Exercise rather than inventing a schema.
-
-All answerable units have an explicit integer `number`, a `reference_answer`, and an `explanation`. Do not store user-answer state in `exercise.json`.
+If the source prints the reference answer or explanation, preserve it unless the user explicitly asks for correction. If not printed, derive them only when supported by the recognized Passage/question; do not invent unsupported facts.
 
 ### `article_choice`
 
-Use for ordinary multiple-choice questions attached to a complete Article.
-
 ```json
 {
+  "filetype": "exercise",
   "type": "article_choice",
   "questions": [
     {
@@ -153,153 +139,40 @@ Use for ordinary multiple-choice questions attached to a complete Article.
         {"key": "B", "text": "Option B"}
       ],
       "reference_answer": "B",
-      "explanation": "A concise explanation based on the Passage."
+      "explanation": "Concise explanation."
     }
   ]
 }
 ```
 
-Rules:
-
-- `questions` is non-empty;
-- `number` values are unique positive integers;
-- `prompt` is non-empty and must not contain `[[n]]`;
-- preserve visible option keys and texts in source order;
-- option keys are unique within a question;
-- `reference_answer` exactly matches one option key.
+`questions` is non-empty; `prompt` is non-empty and contains no `[[n]]`; option keys are unique; `reference_answer` matches an option key.
 
 ### `article_answer`
 
-Use for free-response questions attached to a complete Article.
-
-```json
-{
-  "type": "article_answer",
-  "questions": [
-    {
-      "number": 1,
-      "prompt": "How was Helen's dress?",
-      "reference_answer": "It was a bit small.",
-      "explanation": "A concise explanation based on the Passage."
-    }
-  ]
-}
-```
-
-Rules:
-
-- `questions` is non-empty;
-- `number` values are unique positive integers;
-- `prompt` is non-empty and must not contain `[[n]]`;
-- `reference_answer` is a non-empty string.
+Uses non-empty `questions`; each question has `number`, non-empty `prompt`, non-empty `reference_answer`, and `explanation`. `prompt` contains no `[[n]]`.
 
 ### `article_cloze`
 
-Use when the Passage body contains numbered blanks and each blank has its own multiple-choice option set.
-
-`passage.json` must be ArticleBlank and contain corresponding `[[n]]` placeholders.
-
-```json
-{
-  "type": "article_cloze",
-  "items": [
-    {
-      "number": 1,
-      "options": [
-        {"key": "A", "text": "watch"},
-        {"key": "B", "text": "help"}
-      ],
-      "reference_answer": "B",
-      "explanation": "A concise explanation based on context."
-    }
-  ]
-}
-```
-
-Rules:
-
-- `items` is non-empty;
-- every item number corresponds one-to-one with exactly one Passage placeholder;
-- each item has at least two options;
-- option keys are unique within the item;
-- `reference_answer` exactly matches one option key.
+Uses non-empty `items`; each item has `number`, at least two keyed `options`, `reference_answer`, and `explanation`. Each item number matches exactly one Passage placeholder, and the reference answer matches an option key.
 
 ### `article_cloze_words`
 
-Use when the Passage body contains numbered blanks completed by typing a word or phrase, optionally from a cue.
-
-```json
-{
-  "type": "article_cloze_words",
-  "items": [
-    {
-      "number": 1,
-      "cue": "bright",
-      "reference_answer": "brightly",
-      "explanation": "A concise explanation based on context."
-    }
-  ]
-}
-```
-
-Rules:
-
-- `items` is non-empty;
-- every item number corresponds one-to-one with exactly one Passage placeholder;
-- `cue` must always exist and must be a string; an empty string is allowed;
-- `reference_answer` is non-empty.
+Uses non-empty `items`; each item has `number`, string `cue` (empty string allowed), non-empty `reference_answer`, and `explanation`. Item numbers match Passage placeholders exactly.
 
 ### `article_cloze_sentences`
 
-Use when numbered Passage blanks are filled by choosing from one shared pool of complete sentence options.
+Uses one shared non-empty `options` array with at least two options plus non-empty `items`. Shared option keys are unique single uppercase characters. Each item has `number`, `reference_answer`, and `explanation`; item numbers match Passage placeholders exactly and each reference answer matches a shared option key.
 
-```json
-{
-  "type": "article_cloze_sentences",
-  "options": [
-    {"key": "A", "text": "Sentence A."},
-    {"key": "B", "text": "Sentence B."}
-  ],
-  "items": [
-    {
-      "number": 1,
-      "reference_answer": "B",
-      "explanation": "A concise explanation based on context."
-    }
-  ]
-}
-```
+## 5. Final Validation
 
-Rules:
+Before returning/writing files, verify:
 
-- `options` is a shared non-empty option pool with at least two options;
-- every option key is one uppercase character and keys are unique;
-- `items` is non-empty;
-- every item number corresponds one-to-one with exactly one Passage placeholder;
-- each `reference_answer` exactly matches one shared option key.
-
-## Reference answers and explanations
-
-If the source image prints an answer or explanation, preserve it faithfully unless the user explicitly asks for correction.
-
-If the source does not print them, derive `reference_answer` and a concise `explanation` from the recognized Passage and question only when the answer is supported by the source. Do not invent unsupported facts.
-
-`exercise.json` contains textbook Exercise data only. Never add `answer`, `user_answer`, `user_note`, `username`, `userdata`, `correct`, or other user-state fields.
-
-## Final validation
-
-Before returning or writing files, verify:
-
-1. article text and exercise text are separated correctly;
-2. Paragraph order matches the source;
-3. `passage.json` satisfies `../passage_segment/SKILL.md`;
-4. there is no `tts_enabled` property;
-5. all SIDs are unique and lowercase and `next_sid` is correct;
-6. complete Articles have exact SID-matching audio paths and no placeholders;
-7. ArticleBlank Passages have continuous unique `[[1]]..[[N]]` placeholders and no Segment contains `audio`;
-8. `exercise.json`, when present, uses one of the five current `article_*` types;
-9. all answerable units have unique positive integer `number` values;
-10. every `reference_answer` is valid for its Exercise type;
-11. for all three cloze families, item numbers match Passage placeholder numbers exactly;
-12. no Exercise object contains user-answer state;
-13. all output files are valid JSON with no Markdown wrappers or comments.
+- Passage and Exercise text are separated correctly and source order is preserved;
+- `<title>.json` satisfies `../passage_segment/SKILL.md`;
+- Passage has `filetype="passage"`, no `title`, and no `tts_enabled`;
+- Article uses exact `audio/<title>/<sid>_*.mp3` paths; ArticleBlank has continuous `[[1]]..[[N]]` and no Segment contains `audio`;
+- optional Exercise has `filetype="exercise"` and one supported `article_*` type;
+- all answer-unit numbers are unique positive integers and reference answers are valid;
+- all cloze-family item numbers match Passage placeholder numbers exactly;
+- no Exercise object contains user-answer state;
+- all produced files are valid JSON.

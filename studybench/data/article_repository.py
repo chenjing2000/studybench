@@ -6,48 +6,59 @@ from ..json_store import read_json
 
 
 class ArticleRepository:
-    """Persistence boundary for passage.json and exercise.json.
+    """Persistence boundary for Passage and optional Exercise JSON files.
 
-    Passage validity is determined only by passage.json.  exercise.json is an
-    optional attachment: any exercise read/validation/build failure falls back
-    to the already-validated base Article and is returned as a warning.
+    Passage validity is determined only by the selected ``filetype=passage``
+    JSON file.  The companion ``<title>.exercise.json`` is optional; any
+    exercise read/validation/build failure falls back to the already-valid base
+    Article and is returned as a warning.
     """
 
+    def load(self, passage_file, exercise_file=None):
+        passage_file = Path(passage_file)
+        passage_data = self._read_required_json(passage_file, passage_file.name)
+        self._require_filetype(passage_data, "passage", passage_file.name)
+        if not isinstance(passage_data, dict):
+            raise ValueError(f"{passage_file.name} 必须是 JSON object。")
 
-    def load(self, passage_dir):
-        passage_dir = Path(passage_dir)
-        passage_data = self._read_required_json(
-            passage_dir / "passage.json", "passage.json"
-        )
+        # Build the passage-only Article first.  The filename stem is the
+        # authoritative title.  From this point on, Exercise errors can never
+        # invalidate the Passage.
+        fallback = build_article(passage_file, passage_data, None)
 
-        # Build the passage-only Article first.  From this point on, the Passage
-        # is known to be valid and exercise.json is never allowed to invalidate it.
-        fallback = build_article(passage_dir, passage_data, None)
-
-        exercise_path = passage_dir / "exercise.json"
-        if not exercise_path.exists():
+        if exercise_file is None:
             return fallback
-        if not exercise_path.is_file():
+
+        exercise_file = Path(exercise_file)
+        if not exercise_file.exists():
+            return fallback
+        if not exercise_file.is_file():
             return self._with_exercise_warning(
-                fallback, "exercise.json 不是普通文件。"
+                fallback, f"{exercise_file.name} 不是普通文件。"
             )
 
         try:
-            exercise_data = read_json(exercise_path)
+            exercise_data = read_json(exercise_file)
         except Exception as error:
             return self._with_exercise_warning(
-                fallback, f"exercise.json 无法读取：{error}"
+                fallback, f"{exercise_file.name} 无法读取：{error}"
             )
         if not isinstance(exercise_data, dict):
             return self._with_exercise_warning(
-                fallback, "exercise.json 必须是 JSON object。"
+                fallback, f"{exercise_file.name} 必须是 JSON object。"
+            )
+        if exercise_data.get("filetype") != "exercise":
+            actual = exercise_data.get("filetype")
+            return self._with_exercise_warning(
+                fallback,
+                f'{exercise_file.name} 的 filetype 必须是 "exercise"，实际为 {actual!r}。',
             )
 
         try:
-            return build_article(passage_dir, passage_data, exercise_data)
+            return build_article(passage_file, passage_data, exercise_data)
         except Exception as error:
             return self._with_exercise_warning(
-                fallback, f"exercise.json 无法加载：{error}"
+                fallback, f"{exercise_file.name} 无法加载：{error}"
             )
 
     @staticmethod
@@ -67,3 +78,13 @@ class ArticleRepository:
             return read_json(path)
         except Exception as error:
             raise ValueError(f"{label} 无法读取：{error}") from None
+
+    @staticmethod
+    def _require_filetype(data, expected, label):
+        if not isinstance(data, dict):
+            raise ValueError(f"{label} 必须是 JSON object。")
+        actual = data.get("filetype")
+        if actual != expected:
+            raise ValueError(
+                f'{label} 的 filetype 必须是 "{expected}"，实际为 {actual!r}。'
+            )

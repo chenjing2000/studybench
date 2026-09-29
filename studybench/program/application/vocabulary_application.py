@@ -30,13 +30,15 @@ class VocabularyApplication:
             return self._revision
 
     @staticmethod
-    def vocabulary_path(passage_dir):
-        if not passage_dir:
+    def vocabulary_path(passage_file):
+        if not passage_file:
             return None
-        return Path(passage_dir) / "vocabulary.json"
+        passage_file = Path(passage_file)
+        return passage_file.with_name(f"{passage_file.stem}.vocabulary.json")
 
-    def prepare_passage(self, passage_dir):
-        return VocabularyIO.load(self.vocabulary_path(passage_dir), allow_missing=True)
+    def prepare_passage(self, passage_file, vocabulary_file=None):
+        path = Path(vocabulary_file) if vocabulary_file else self.vocabulary_path(passage_file)
+        return VocabularyIO.load(path, allow_missing=True)
 
     def commit_prepared(self, vocabulary):
         if not isinstance(vocabulary, Vocabulary):
@@ -45,11 +47,11 @@ class VocabularyApplication:
             self._current_vocabulary = vocabulary
             self._revision += 1
 
-    def reload(self, passage_dir):
-        if not passage_dir:
+    def reload(self, passage_file):
+        if not passage_file:
             self.clear()
             return self.snapshot()
-        loaded = self.prepare_passage(passage_dir)
+        loaded = self.prepare_passage(passage_file)
         self.commit_prepared(loaded)
         return self.snapshot()
 
@@ -62,29 +64,29 @@ class VocabularyApplication:
         with self._lock:
             return VocabularyIO.from_data(VocabularyIO.to_data(self._current_vocabulary))
 
-    def add_word(self, passage_dir, selected_word):
-        self._require_passage(passage_dir)
+    def add_word(self, passage_file, selected_word):
+        self._require_passage(passage_file)
         cell = WordCell.for_new_word(selected_word)
         with self._lock:
             self._current_vocabulary.add(cell)
-            VocabularyIO.save(self._current_vocabulary, self.vocabulary_path(passage_dir))
+            VocabularyIO.save(self._current_vocabulary, self.vocabulary_path(passage_file))
             self._revision += 1
         return cell
 
-    def move_word(self, passage_dir, word, direction):
-        self._require_passage(passage_dir)
+    def move_word(self, passage_file, word, direction):
+        self._require_passage(passage_file)
         with self._lock:
             result = self._current_vocabulary.move_word(word, direction)
             if result is None:
                 raise ValueError(f"找不到 Vocabulary word：{word}")
             old_index, new_index, changed = result
             if changed:
-                VocabularyIO.save(self._current_vocabulary, self.vocabulary_path(passage_dir))
+                VocabularyIO.save(self._current_vocabulary, self.vocabulary_path(passage_file))
                 self._revision += 1
             return old_index, new_index, changed
 
-    def delete_word(self, passage_dir, word):
-        self._require_passage(passage_dir)
+    def delete_word(self, passage_file, word):
+        self._require_passage(passage_file)
         if self.audio_player is not None and (
             self.audio_player.owns(f"word:uk:{word}")
             or self.audio_player.owns(f"word:us:{word}")
@@ -94,24 +96,24 @@ class VocabularyApplication:
             deleted = self._current_vocabulary.remove_word(word)
             if deleted is None:
                 raise ValueError(f"找不到 Vocabulary word：{word}")
-            VocabularyIO.save(self._current_vocabulary, self.vocabulary_path(passage_dir))
+            VocabularyIO.save(self._current_vocabulary, self.vocabulary_path(passage_file))
             self._revision += 1
             return deleted
 
-    def import_from(self, passage_dir, path):
-        self._require_passage(passage_dir)
+    def import_from(self, passage_file, path):
+        self._require_passage(passage_file)
         incoming = VocabularyIO.load(path)
         with self._lock:
             self._current_vocabulary.replace_all(incoming.cells)
-            VocabularyIO.save(self._current_vocabulary, self.vocabulary_path(passage_dir))
+            VocabularyIO.save(self._current_vocabulary, self.vocabulary_path(passage_file))
             self._revision += 1
             return len(self._current_vocabulary)
 
     def export_to(self, path):
         VocabularyIO.save(self.snapshot(), path)
 
-    def play_audio(self, passage_dir, word, accent):
-        self._require_passage(passage_dir)
+    def play_audio(self, passage_file, word, accent):
+        self._require_passage(passage_file)
         if self.audio_player is None:
             raise ValueError("AudioPlayer 不可用。")
         with self._lock:
@@ -119,16 +121,16 @@ class VocabularyApplication:
             if cell is None:
                 raise ValueError(f"找不到 Vocabulary word：{word}")
             relative = cell.audio_path(accent)
-        path = Path(passage_dir) / relative
+        path = Path(passage_file).parent / relative
         self.audio_player.play_single(path, f"word:{accent}:{word}")
         return relative
 
-    def prepare_audio_job(self, config_root, passage_dir):
-        self._require_passage(passage_dir)
+    def prepare_audio_job(self, config_root, passage_file):
+        self._require_passage(passage_file)
         if self.dictionary_provider_factory is None or self.tts_provider is None:
             raise ValueError("Vocabulary audio providers 不可用。")
         config = load_vocabulary_audio_config_for_run(config_root)
-        root = Path(passage_dir)
+        root = Path(passage_file).parent
         with self._lock:
             if len(self._current_vocabulary) == 0:
                 raise ValueError("当前 Vocabulary 没有可处理的单词。")
@@ -144,8 +146,8 @@ class VocabularyApplication:
                 for cell in self._current_vocabulary
             )
         return {
-            "passage_dir": str(root),
-            "vocabulary_path": self.vocabulary_path(root),
+            "passage_path": str(Path(passage_file)),
+            "vocabulary_path": self.vocabulary_path(passage_file),
             "start_revision": start_revision,
             "request": VocabularyGenerationRequest(entries=entries),
             "mdx_path": config["mdx_path"],
@@ -202,6 +204,6 @@ class VocabularyApplication:
             return len(self._current_vocabulary)
 
     @staticmethod
-    def _require_passage(passage_dir):
-        if not passage_dir:
+    def _require_passage(passage_file):
+        if not passage_file:
             raise ValueError("当前没有打开 Passage。")

@@ -11,8 +11,8 @@ from ..utils import (
 class ArticleChoice(Article):
     exercise_type = "article_choice"
 
-    def __init__(self, passage_dir, passage_data, exercise_data):
-        super().__init__(passage_dir, passage_data)
+    def __init__(self, passage_file, passage_data, exercise_data):
+        super().__init__(passage_file, passage_data)
         self.exercise = self._validate_exercise(exercise_data)
 
     @property
@@ -21,7 +21,7 @@ class ArticleChoice(Article):
 
     def _validate_exercise(self, data):
         if not isinstance(data, dict) or data.get("type") != self.exercise_type:
-            raise ValueError("exercise.json type 必须为 article_choice。")
+            raise ValueError("Exercise JSON type 必须为 article_choice。")
         questions = data.get("questions")
         if not isinstance(questions, list) or not questions:
             raise ValueError("article_choice 的 questions 必须是非空数组。")

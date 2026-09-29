@@ -6,14 +6,16 @@ from ..utils import validate_base_passage
 class ArticleBlank:
     article_family = "article_blank"
 
-    def __init__(self, passage_dir, passage_data):
-        self.passage_dir = Path(passage_dir)
+    def __init__(self, passage_file, passage_data):
+        self.passage_file = Path(passage_file)
+        self.passage_dir = self.passage_file.parent
+        self.title = self.passage_file.stem
         validated = validate_base_passage(
             passage_data,
+            title=self.title,
             allow_audio=False,
             require_placeholders=True,
         )
-        self.title = validated["title"]
         self.next_sid = validated["next_sid"]
         self.paragraphs = validated["paragraphs"]
         self.placeholders = validated["placeholders"]

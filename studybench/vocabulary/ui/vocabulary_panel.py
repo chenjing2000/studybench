@@ -66,7 +66,7 @@ class VocabularyPanel(QWidget):
             button.setFont(font)
             button.setFixedWidth(60)
             button.setFixedHeight(SIDEBAR_BUTTON_HEIGHT)
-        self.import_button.setToolTip("导入完整 vocabulary.json，并整体替换当前词汇表")
+        self.import_button.setToolTip("导入完整 Vocabulary JSON，并整体替换当前词汇表")
         self.import_button.clicked.connect(self.import_requested.emit)
         self.export_button.clicked.connect(self.export_requested.emit)
 

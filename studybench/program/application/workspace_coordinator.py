@@ -68,17 +68,30 @@ class WorkspaceCoordinator:
             prepared_account = None
             user_folder = self.account.current_user_folder
 
-        prepared_article = self.article.prepare_passage(target.passage_dir, user_folder)
+        prepared_article = self.article.prepare_passage(
+            target.passage_file,
+            target.exercise_file,
+            target.book_dir,
+            target.article_id,
+            user_folder,
+        )
         messages.extend(self._messages(prepared_article.warnings))
 
         try:
-            prepared_vocabulary = self.vocabulary.prepare_passage(target.passage_dir)
+            prepared_vocabulary = self.vocabulary.prepare_passage(
+                target.passage_file, target.vocabulary_file
+            )
         except Exception as error:
             prepared_vocabulary = Vocabulary()
+            vocabulary_name = (
+                target.vocabulary_file.name
+                if target.vocabulary_file is not None
+                else f"{target.passage_file.stem}.vocabulary.json"
+            )
             messages.append(
                 AppMessage(
                     "ERROR",
-                    f"《{prepared_article.article.title}》：vocabulary.json 无法加载：{error}",
+                    f"《{prepared_article.article.title}》：{vocabulary_name} 无法加载：{error}",
                 )
             )
 
