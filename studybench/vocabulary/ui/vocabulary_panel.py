@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, QTimer, Qt, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QFrame,
@@ -82,12 +82,13 @@ class VocabularyPanel(QWidget):
 
         self.content = QWidget()
         self.content.setMinimumWidth(0)
-        self.content.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.content.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.words_layout = QVBoxLayout(self.content)
         self.words_layout.setContentsMargins(0, 0, 0, 0)
         self.words_layout.setSpacing(0)
-        self.words_layout.addStretch(1)
+        self.words_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.scroll.setWidget(self.content)
+        self.scroll.viewport().installEventFilter(self)
 
         self.highlight_button = QPushButton("show")
         highlight_font = self.highlight_button.font()
@@ -132,7 +133,9 @@ class VocabularyPanel(QWidget):
             widget.audio_requested.connect(self.audio_requested.emit)
             widget.move_requested.connect(self.move_requested.emit)
             widget.delete_requested.connect(self.delete_requested.emit)
-            self.words_layout.insertWidget(self.words_layout.count() - 1, widget)
+            self.words_layout.addWidget(widget)
+        self._sync_content_height()
+        QTimer.singleShot(0, self._sync_content_height)
         self._refresh_footer_buttons()
 
     def set_audio_generation_enabled(self, enabled):
@@ -145,11 +148,28 @@ class VocabularyPanel(QWidget):
         self.gen_audio_button.setEnabled(has_words and self.audio_generation_enabled)
 
     def _clear_words(self):
-        while self.words_layout.count() > 1:
+        while self.words_layout.count():
             item = self.words_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
+        self.content.setFixedHeight(0)
+
+    def _sync_content_height(self):
+        """Match the scroll widget height to the rows at the current viewport width."""
+        self.words_layout.invalidate()
+        self.words_layout.activate()
+        viewport_width = max(0, self.scroll.viewport().width())
+        if self.words_layout.hasHeightForWidth():
+            target_height = self.words_layout.heightForWidth(viewport_width)
+        else:
+            target_height = self.words_layout.sizeHint().height()
+        self.content.setFixedHeight(max(0, target_height))
+
+    def eventFilter(self, watched, event):
+        if watched is self.scroll.viewport() and event.type() == QEvent.Type.Resize:
+            QTimer.singleShot(0, self._sync_content_height)
+        return super().eventFilter(watched, event)
 
     def _toggle_highlights(self):
         self.highlights_visible = not self.highlights_visible

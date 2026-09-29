@@ -21,7 +21,7 @@ Python supplies semantic component data. JavaScript owns transient interaction; 
 
 ### Right panel
 
-The right panel renders the current Vocabulary with word, phonetics, meanings, UK/US playback, editing actions, highlighting controls, and Vocabulary audio generation.
+The right panel renders the current Vocabulary with word, phonetics, meanings, UK/US playback, editing actions, highlighting controls, and Vocabulary audio generation. Vocabulary rows stay top-aligned, and the vertical scroll range ends when the final row reaches the bottom of the visible list area; no extra blank tail is scrollable.
 
 ## 2. Settings
 

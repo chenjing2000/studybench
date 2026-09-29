@@ -126,3 +126,15 @@ def test_selection_add_button_uses_last_nonempty_range_fragment():
     assert "range.getBoundingClientRect()" not in runtime
     assert "rects[rects.length - 1]" in runtime
 
+
+
+def test_vocabulary_scroll_area_has_no_scrollable_blank_tail():
+    panel = read("studybench/vocabulary/ui/vocabulary_panel.py")
+    assert "self.words_layout.setAlignment(Qt.AlignmentFlag.AlignTop)" in panel
+    assert "QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed" in panel
+    assert "self.scroll.viewport().installEventFilter(self)" in panel
+    assert "self.words_layout.heightForWidth(viewport_width)" in panel
+    assert "self.content.setFixedHeight(max(0, target_height))" in panel
+    assert "self.words_layout.addStretch(1)" not in panel
+    assert "SetMinAndMaxSize" not in panel
+    assert "self.content.adjustSize()" not in panel
