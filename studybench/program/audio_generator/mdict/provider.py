@@ -1,14 +1,7 @@
 import re
-from typing import Protocol
-
 from ..models import AudioPayloads, MdictLookupResult
 from .backend import MdictUtilsBackend
 from .oxford_adapter import mdd_resource_candidates, parse_oxford_entry
-
-
-class DictionaryProvider(Protocol):
-    def lookup(self, word: str) -> MdictLookupResult:
-        ...
 
 
 _LINK_RE = re.compile(r"^\s*@@@LINK=(.+?)\s*$", re.IGNORECASE | re.DOTALL)

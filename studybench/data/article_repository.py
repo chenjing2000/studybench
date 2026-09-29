@@ -63,11 +63,7 @@ class ArticleRepository:
 
     @staticmethod
     def _with_exercise_warning(fallback, warning):
-        return replace(
-            fallback,
-            has_exercise=False,
-            warning=str(warning),
-        )
+        return replace(fallback, warning=str(warning))
 
     @staticmethod
     def _read_required_json(path, label):

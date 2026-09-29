@@ -18,7 +18,6 @@ class AppMessage:
 
 @dataclass
 class WorkspaceUpdate:
-    library_changed: bool = False
     account_changed: bool = False
     article_changed: bool = False
     vocabulary_changed: bool = False
@@ -46,7 +45,6 @@ class WorkspaceCoordinator:
         self.vocabulary.clear()
         self.account.clear()
         return WorkspaceUpdate(
-            library_changed=True,
             account_changed=True,
             article_changed=True,
             vocabulary_changed=True,
@@ -138,4 +136,4 @@ class WorkspaceCoordinator:
 
     def add_selected_word(self, text):
         cell = self.vocabulary.add_word(self.library.current_passage_path, text)
-        return cell, WorkspaceUpdate(vocabulary_changed=True)
+        return cell

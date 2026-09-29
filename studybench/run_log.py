@@ -19,12 +19,6 @@ def write_log(passage_path, level, message):
     return _append_text(passage_path, line)
 
 
-def write_log_lines(passage_path, lines):
-    text = ""
-    for line in lines:
-        text += str(line).rstrip("\n") + "\n"
-    return _append_text(passage_path, text)
-
 
 def _append_text(passage_path, text):
     try:

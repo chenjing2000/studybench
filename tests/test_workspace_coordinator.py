@@ -17,7 +17,6 @@ def test_open_library_and_passage_commits_coordinated_state(tmp_path):
     update = coordinator.open_library(root)
     passage_update = coordinator.open_passage(passage)
 
-    assert update.library_changed is True
     assert passage_update.article_changed and passage_update.vocabulary_changed
     assert library.current_library == root.resolve()
     assert library.current_passage_path == passage.resolve()

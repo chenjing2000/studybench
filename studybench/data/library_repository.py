@@ -68,14 +68,6 @@ class LibraryRepository:
         books.sort(key=lambda item: item["name"].casefold())
         return books, warnings
 
-    def read_book(self, book_dir):
-        """Return Book identity without opening or validating book.json."""
-        book_dir = Path(book_dir)
-        marker = book_dir / "book.json"
-        if not marker.is_file():
-            raise ValueError(f"Book 标志文件不存在：{marker}")
-        return {"name": book_dir.name, "path": str(book_dir)}
-
     # ------------------------------------------------------------------
     # Prepare phase: scan and validate content only, no writes.
     # ------------------------------------------------------------------

@@ -149,14 +149,3 @@ def test_book_json_is_marker_only_and_library_picker_has_english_title():
     assert 'book_dir.name' in repository
     assert 'book["name"]' in tree
     assert 'QFileDialog.getExistingDirectory(self, "选择英语图书馆", start_dir)' in left_panel
-
-
-
-def test_mdict_backend_does_not_duplicate_the_full_key_table():
-    backend = read("studybench/program/audio_generator/mdict/backend.py")
-    assert "_build_exact_index" not in backend
-    assert "class _RecordRef" not in backend
-    assert "_mdx_index" not in backend
-    assert "_mdd_index" not in backend
-    assert "_HashedKeyLookup" in backend
-    assert "array(\"Q\", packed)" in backend

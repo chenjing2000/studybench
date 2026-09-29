@@ -475,7 +475,7 @@ class MainWindow(QMainWindow):
 
     def add_vocabulary_word(self, selected_word):
         try:
-            cell, _update = self.workspace.add_selected_word(selected_word)
+            cell = self.workspace.add_selected_word(selected_word)
             self._refresh_vocabulary_view()
             self.show_status(f"已添加 {cell.word.word}")
         except Exception as error:
@@ -574,8 +574,10 @@ class MainWindow(QMainWindow):
         try:
             self.vocabulary_application.reload(self.library_application.current_passage_path)
             self._refresh_vocabulary_view()
-        except Exception:
-            pass
+        except Exception as error:
+            passage_path = self.library_application.current_passage_path
+            if passage_path is not None:
+                write_log(passage_path, "ERROR", f"Vocabulary reload failed: {error}")
 
     def start_vocabulary_audio(self):
         if self.audio_task_runner.is_running:

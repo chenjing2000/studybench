@@ -1,3 +1,3 @@
-from .provider import DictionaryProvider, LazyMdictProvider, MdictProvider
+from .provider import LazyMdictProvider, MdictProvider
 
-__all__ = ["DictionaryProvider", "LazyMdictProvider", "MdictProvider"]
+__all__ = ["LazyMdictProvider", "MdictProvider"]

@@ -24,7 +24,6 @@ TYPE_CLASS_MAP = {
 @dataclass(frozen=True)
 class LoadedArticle:
     article: object
-    has_exercise: bool
     warning: str | None = None
 
 
@@ -38,10 +37,7 @@ def build_article(passage_file, passage_data, exercise_data=None):
     passage_file = Path(passage_file)
     if exercise_data is None:
         article_class = ArticleBlank if passage_has_placeholders(passage_data) else Article
-        return LoadedArticle(
-            article=article_class(passage_file, passage_data),
-            has_exercise=False,
-        )
+        return LoadedArticle(article=article_class(passage_file, passage_data))
 
     if not isinstance(exercise_data, dict):
         raise ValueError("Exercise JSON 必须是 JSON object。")
@@ -50,7 +46,7 @@ def build_article(passage_file, passage_data, exercise_data=None):
     article_class = TYPE_CLASS_MAP.get(exercise_type)
     if article_class is not None:
         article = article_class(passage_file, passage_data, exercise_data)
-        return LoadedArticle(article=article, has_exercise=True)
+        return LoadedArticle(article=article)
 
     fallback_class = ArticleBlank if passage_has_placeholders(passage_data) else Article
     article = fallback_class(passage_file, passage_data)
@@ -59,4 +55,4 @@ def build_article(passage_file, passage_data, exercise_data=None):
         f"Unsupported exercise type: {label}. "
         f"Rendered as {fallback_class.__name__}."
     )
-    return LoadedArticle(article=article, has_exercise=False, warning=warning)
+    return LoadedArticle(article=article, warning=warning)

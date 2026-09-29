@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from studybench.run_log import log_path, write_log, write_log_lines
+from studybench.run_log import log_path, write_log
 
 
 def test_passage_log_is_appended_under_cache(tmp_path):
@@ -8,12 +8,9 @@ def test_passage_log_is_appended_under_cache(tmp_path):
     assert path == tmp_path / "cache" / "studybench.log"
 
     assert write_log(tmp_path, "INFO", "Passage opened") is True
-    assert write_log_lines(tmp_path, ["line one", "line two"]) is True
 
     text = path.read_text(encoding="utf-8")
     assert "INFO  Passage opened" in text
-    assert "line one" in text
-    assert "line two" in text
 
 
 def test_passage_file_log_uses_article_specific_name(tmp_path):

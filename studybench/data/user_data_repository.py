@@ -140,19 +140,6 @@ class UserDataRepository:
             raise
         return {"folder": folder_name, "username": clean_username}
 
-    def delete_user(self, book_dir, user_folder):
-        if user_folder == DEFAULT_USER_FOLDER:
-            return
-        user_dir = Path(book_dir) / "userdata" / user_folder
-        answer_path = user_dir / "answer_sheet.json"
-        try:
-            if answer_path.exists():
-                answer_path.unlink()
-            if user_dir.exists():
-                user_dir.rmdir()
-        except OSError:
-            pass
-
     def load_passage_answer(self, book_dir, article_id, user_folder):
         article_id = self._validate_article_id(article_id)
         answer_sheet = self._read_sheet(book_dir, user_folder)

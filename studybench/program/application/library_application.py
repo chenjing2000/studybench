@@ -60,7 +60,7 @@ class LibraryApplication:
         book_dir = Path(item["book_path"]).resolve()
         try:
             book_dir.relative_to(self._current_library)
-        except Exception:
+        except ValueError:
             raise ValueError("Passage 不属于当前 Library。") from None
 
         exercise_file = item.get("exercise_file")

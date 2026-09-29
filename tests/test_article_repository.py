@@ -13,7 +13,7 @@ def test_repository_selects_known_exercise_type(tmp_path):
 
     assert isinstance(loaded.article, ArticleAnswer)
     assert loaded.article.title == "Sample"
-    assert loaded.has_exercise is True
+    assert loaded.article.has_exercise is True
     assert loaded.warning is None
 
 
@@ -32,7 +32,7 @@ def test_unknown_or_invalid_exercise_falls_back_to_passage(tmp_path):
     write_json(exercise, {"filetype": "exercise", "type": "article_matching"})
     loaded = ArticleRepository().load(passage, exercise)
     assert type(loaded.article) is Article
-    assert loaded.has_exercise is False
+    assert loaded.article.has_exercise is False
     assert "Unsupported exercise type" in loaded.warning
 
     write_json(exercise, {"filetype": "exercise", "type": "article_choice", "questions": []})

@@ -59,6 +59,7 @@ class SettingsDialog(QDialog):
         super().showEvent(event)
         self._connect_screen_tracking()
         self._apply_size_limits()
+        self.save_button.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def changeEvent(self, event):
         super().changeEvent(event)
