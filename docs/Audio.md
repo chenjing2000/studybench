@@ -57,6 +57,8 @@ audio_vocabulary/<normalized_stem>_us.mp3
 
 `VocabularyGenerator` returns phonetic updates instead of mutating persisted Vocabulary directly; `VocabularyApplication` merges safe updates and `VocabularyIO` owns persistence.
 
+The MDICT backend reuses mdict-utils' existing parsed key tables and keeps only a compact 64-bit hash/index array for repeated case-insensitive lookup. It does not build a second full Python dictionary of all MDX/MDD keys.
+
 ## 4. Playback
 
 StudyBench uses a shared Qt media player for playback. Segment right-click requests, Passage controls, and Vocabulary speaker buttons all route through the existing playback layer rather than creating independent players.

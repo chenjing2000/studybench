@@ -1,13 +1,8 @@
+from array import array
+from bisect import bisect_left, bisect_right
 from pathlib import Path
 import re
-
-
-class _RecordRef:
-    def __init__(self, md, key, offset, length):
-        self.md = md
-        self.key = key
-        self.offset = offset
-        self.length = length
+import zlib
 
 
 def _numbered_mdd_sort_key(item):
@@ -42,25 +37,60 @@ def _decode_key(key):
     return key.decode("utf-8", errors="replace")
 
 
-def _build_exact_index(md):
-    key_list = getattr(md, "_key_list", None)
-    if key_list is None:
-        raise RuntimeError(
-            "installed mdict-utils does not expose the parsed key table required "
-            "for efficient repeated lookup"
-        )
+class _HashedKeyLookup:
+    """Compact case-insensitive index over mdict-utils' existing key table.
 
-    index = {}
-    for i, item in enumerate(key_list):
-        offset, key = item
-        if i + 1 < len(key_list):
-            length = key_list[i + 1][0] - offset
-        else:
-            length = -1
-        normalized = _decode_key(key).casefold()
-        refs = index.setdefault(normalized, [])
-        refs.append(_RecordRef(md, key, offset, length))
-    return index
+    mdict-utils already stores every raw key and record offset in ``_key_list``.
+    The previous StudyBench backend duplicated that table as a Python ``dict``
+    containing a string, list and ``_RecordRef`` object for almost every entry.
+
+    Here each original entry contributes only one packed 64-bit value:
+    ``CRC32(casefolded_key) << 32 | original_index``.  Lookups binary-search the
+    hash range and then compare the real casefolded key, so hash collisions do
+    not change correctness.  Original record order is preserved by the packed
+    low 32-bit index.
+    """
+
+    _INDEX_MASK = 0xFFFFFFFF
+
+    def __init__(self, md):
+        key_list = getattr(md, "_key_list", None)
+        if key_list is None:
+            raise RuntimeError(
+                "installed mdict-utils does not expose the parsed key table required "
+                "for efficient repeated lookup"
+            )
+        if len(key_list) > self._INDEX_MASK:
+            raise RuntimeError("MDICT key table is too large for compact lookup")
+
+        self.md = md
+        self.key_list = key_list
+        packed = []
+        for index, item in enumerate(key_list):
+            normalized = _decode_key(item[1]).casefold().encode("utf-8")
+            key_hash = zlib.crc32(normalized) & self._INDEX_MASK
+            packed.append((key_hash << 32) | index)
+        packed.sort()
+        self._index = array("Q", packed)
+
+    @staticmethod
+    def _hash(normalized):
+        return zlib.crc32(normalized.encode("utf-8")) & 0xFFFFFFFF
+
+    def find_indices(self, key):
+        normalized = key.casefold()
+        key_hash = self._hash(normalized)
+        low = bisect_left(self._index, key_hash << 32)
+        high = bisect_right(self._index, (key_hash << 32) | self._INDEX_MASK)
+
+        matches = []
+        for position in range(low, high):
+            packed = self._index[position]
+            index = packed & self._INDEX_MASK
+            raw_key = self.key_list[index][1]
+            if _decode_key(raw_key).casefold() == normalized:
+                matches.append(index)
+        return matches
 
 
 class MdictUtilsBackend:
@@ -81,26 +111,27 @@ class MdictUtilsBackend:
 
         self._reader = reader
         self._mdx = MDX(str(self.mdx_path))
-        self._mdx_index = _build_exact_index(self._mdx)
+        self._mdx_lookup = _HashedKeyLookup(self._mdx)
 
         self._mdds = []
+        self._mdd_lookups = []
         for path in self.mdd_paths:
-            self._mdds.append(MDD(str(path)))
+            mdd = MDD(str(path))
+            self._mdds.append(mdd)
+            self._mdd_lookups.append(_HashedKeyLookup(mdd))
 
-        self._mdd_index = {}
-        for mdd in self._mdds:
-            index = _build_exact_index(mdd)
-            for key, refs in index.items():
-                self._mdd_index.setdefault(key, []).extend(refs)
-
-    def _read(self, ref):
-        return self._reader.get_record(ref.md, ref.key, ref.offset, ref.length)
+    def _read(self, lookup, index):
+        offset, key = lookup.key_list[index]
+        if index + 1 < len(lookup.key_list):
+            length = lookup.key_list[index + 1][0] - offset
+        else:
+            length = -1
+        return self._reader.get_record(lookup.md, key, offset, length)
 
     def query_mdx(self, key):
         records = []
-        refs = self._mdx_index.get(key.casefold(), [])
-        for ref in refs:
-            value = self._read(ref)
+        for index in self._mdx_lookup.find_indices(key):
+            value = self._read(self._mdx_lookup, index)
             if isinstance(value, bytes):
                 value = value.decode("utf-8", errors="replace")
             if isinstance(value, str) and value:
@@ -108,9 +139,9 @@ class MdictUtilsBackend:
         return records
 
     def query_mdd(self, key):
-        refs = self._mdd_index.get(key.casefold(), [])
-        for ref in refs:
-            value = self._read(ref)
-            if isinstance(value, bytes) and value:
-                return value
+        for lookup in self._mdd_lookups:
+            for index in lookup.find_indices(key):
+                value = self._read(lookup, index)
+                if isinstance(value, bytes) and value:
+                    return value
         return None
