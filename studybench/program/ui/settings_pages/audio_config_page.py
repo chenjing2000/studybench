@@ -113,14 +113,35 @@ class AudioConfigPage(QWidget):
             combo.setCurrentIndex(index)
 
     def _browse_mdx(self):
-        self._browse_path(self.mdx_edit, "选择 MDX 文件", "MDX Files (*.mdx)")
+        self._browse_path(
+            self.mdx_edit,
+            self.mdd_edit,
+            "选择 MDX 文件",
+            "MDX Files (*.mdx)",
+        )
 
     def _browse_mdd(self):
-        self._browse_path(self.mdd_edit, "选择 MDD 文件", "MDD Files (*.mdd)")
+        self._browse_path(
+            self.mdd_edit,
+            self.mdx_edit,
+            "选择 MDD 文件",
+            "MDD Files (*.mdd)",
+        )
 
-    def _browse_path(self, line_edit, title, file_filter):
+    def _browse_path(self, line_edit, other_edit, title, file_filter):
+        start = Path("C:\\")
+
         current = line_edit.text().strip()
-        start = Path(current).parent if current else Path.home()
+        other = other_edit.text().strip()
+
+        for value in (current, other):
+            if not value:
+                continue
+            folder = Path(value).parent
+            if folder.exists() and folder.is_dir():
+                start = folder
+                break
+
         selected, _ = QFileDialog.getOpenFileName(self, title, str(start), file_filter)
         if selected:
             line_edit.setText(str(Path(selected)))

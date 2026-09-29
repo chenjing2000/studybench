@@ -1,6 +1,6 @@
 import json
 
-from PySide6.QtCore import QUrl, Signal
+from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
@@ -13,6 +13,7 @@ class CenterPanel(QWebEngineView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         self.bridge = CenterWebBridge(self)
         self.page_loaded = False
         self.channel = QWebChannel(self.page())

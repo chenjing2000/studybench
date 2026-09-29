@@ -9,7 +9,7 @@ def read(path):
 
 
 def test_project_version_matches_release():
-    assert 'version = "0.12.9"' in read("pyproject.toml")
+    assert 'version = "0.12.11"' in read("pyproject.toml")
 
 
 def test_article_domain_is_qt_and_ui_free():
@@ -110,3 +110,12 @@ def test_bundled_passage_skills_match_current_article_schema():
     assert "ArticleBlank" in segment_skill
     assert "omit `audio` completely" in segment_skill
     assert "no Segment contains `audio`" in image_skill
+
+
+def test_center_panel_right_click_is_delegated_once():
+    center_panel = read("studybench/program/ui/center_panel.py")
+    runtime = read("studybench/program/ui/web/runtime.js")
+    assert "Qt.ContextMenuPolicy.NoContextMenu" in center_panel
+    assert runtime.count('addEventListener("contextmenu"') == 1
+    assert 'span.addEventListener("contextmenu"' not in runtime
+    assert 'bridge.playSegment(sid)' in runtime

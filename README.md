@@ -21,11 +21,13 @@ uv run python main.py
 uv run pytest
 ```
 
-## V0.12.9 architecture
+## V0.12.11 architecture
 
-V0.12.9 is a cleanup release: Exercise presentation is owned by `page.css`, `ArticleRepository.read_summary()` and duplicate reconciliation order state were removed, implementation-locking tests were reduced, and the settings icon was optimized.
+V0.12.11 keeps the V0.12.9 cleanup architecture and simplifies center-panel right-click handling: Qt disables the built-in QWebEngine context menu, while one delegated JavaScript `contextmenu` listener identifies audio-enabled Segments and requests their audio playback. There is no polling and no per-Segment right-click listener.
 
-V0.12.9 keeps each Book directory the source of truth for Library membership. When a Library is selected, `LibraryRepository` scans every Book's `passages/` and `userdata/`, validates what can actually be loaded, reconciles `book.json["passages"]` and `book.json["userdata"]`, and only then publishes the navigation tree. Existing valid Passage order in `book.json` is preserved while newly discovered Passage folders are appended.
+In Settings, MDX/MDD browse dialogs now start from the current field's existing parent directory when available, otherwise the other dictionary field's parent directory, and finally fall back to `C:\\`.
+
+V0.12.11 keeps each Book directory the source of truth for Library membership. When a Library is selected, `LibraryRepository` scans every Book's `passages/` and `userdata/`, validates what can actually be loaded, reconciles `book.json["passages"]` and `book.json["userdata"]`, and only then publishes the navigation tree. Existing valid Passage order in `book.json` is preserved while newly discovered Passage folders are appended.
 
 `passage.json` is now the only validity boundary for a Passage. `ArticleRepository.load()` first builds a passage-only Article; corrupt or invalid `exercise.json` then falls back to that Article with a warning instead of invalidating the Passage. `vocabulary.json` remains independent and reports its own load errors without blocking Passage navigation. The system default account is now folder/username `xiaoxin`: a missing `xiaoxin` is created during reconciliation, while an existing but damaged `xiaoxin` is reported and never overwritten automatically.
 
@@ -378,6 +380,6 @@ The package still contains:
 - `skills/image_to_passage/SKILL.md`
 - `skills/vocabulary_enrichment/SKILL.md`
 
-The Passage-generation Skills remain aligned with the current runtime schema in V0.12.9: there is no `tts_enabled`, ArticleBlank Segments omit `audio`, and Exercise generation uses the five supported `article_*` types. `vocabulary_enrichment` keeps its existing vocabulary rules.
+The Passage-generation Skills remain aligned with the current runtime schema in V0.12.11: there is no `tts_enabled`, ArticleBlank Segments omit `audio`, and Exercise generation uses the five supported `article_*` types. `vocabulary_enrichment` keeps its existing vocabulary rules.
 
 The versioned files under `docs/` are historical design records for the evolution of the program. The current README, current Skills, and executable schema validation in the Article/Vocabulary modules are authoritative when an older design document differs.

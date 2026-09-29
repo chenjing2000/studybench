@@ -189,12 +189,6 @@ function renderSegment(component) {
   span._parts = Array.isArray(component.children) ? component.children : [];
   if (audioEnabled) {
     span.title = "右键朗读该句";
-    span.addEventListener("contextmenu", function (event) {
-      event.preventDefault();
-      event.stopPropagation();
-      clearTextSelection();
-      if (bridge) bridge.playSegment(component.sid || "");
-    });
   }
   renderSegmentParts(span);
   return span;
@@ -674,6 +668,17 @@ function findWholeWord(text, word, fromIndex) {
 function isEnglishWordCharacter(character) {
   return /[A-Za-z'’-]/.test(character || "");
 }
+
+document.addEventListener("contextmenu", (event) => {
+  const segment = closestSegment(event.target);
+  if (!segment || !segment.classList.contains("audio-enabled")) return;
+
+  const sid = segment.dataset.sid || "";
+  if (!sid) return;
+
+  clearTextSelection();
+  if (bridge) bridge.playSegment(sid);
+});
 
 document.addEventListener("selectionchange", updateSelectionButton);
 addButton.addEventListener("mousedown", function (event) { event.preventDefault(); });
