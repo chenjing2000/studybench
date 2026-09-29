@@ -37,7 +37,7 @@ class LibraryTree(QTreeWidget):
         self.clear()
         first_article_item = None
         for book in books:
-            book_item = QTreeWidgetItem([book["bookname"]])
+            book_item = QTreeWidgetItem([book["name"]])
             book_font = book_item.font(0)
             book_font.setPointSize(10)
             book_item.setFont(0, book_font)

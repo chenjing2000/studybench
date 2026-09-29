@@ -15,8 +15,7 @@ class PreparedAccountState:
 class AccountApplication:
     """Own only active account state; repositories own files."""
 
-    def __init__(self, library_repository, user_data_repository):
-        self.library_repository = library_repository
+    def __init__(self, user_data_repository):
         self.user_data_repository = user_data_repository
         self._current_accounts = []
         self._current_user_folder = DEFAULT_USER_FOLDER
@@ -39,31 +38,16 @@ class AccountApplication:
         if not book_dir:
             return PreparedAccountState((), DEFAULT_USER_FOLDER, DEFAULT_USERNAME, False, ())
         warnings = []
-        references, ref_warnings = self.library_repository.user_references(
-            book_dir, self.user_data_repository.validate_user_folder_reference
+        accounts, account_warnings = self.user_data_repository.list_accounts(book_dir)
+        warnings.extend(account_warnings)
+        default_account = next(
+            (account for account in accounts if account["folder"] == DEFAULT_USER_FOLDER),
+            None,
         )
-        warnings.extend(ref_warnings)
-        accounts = []
-        for folder_name in references:
-            try:
-                accounts.append(self.user_data_repository.get_account(book_dir, folder_name))
-            except Exception as error:
-                warnings.append(f"用户 {folder_name} 无法加载：{error}")
-        if DEFAULT_USER_FOLDER in references:
-            try:
-                default_account = self.user_data_repository.get_account(
-                    book_dir, DEFAULT_USER_FOLDER
-                )
-                folder = default_account["folder"]
-                username = default_account["username"]
-                available = True
-            except Exception as error:
-                warnings.append(
-                    f"默认用户 {DEFAULT_USER_FOLDER} 数据无法加载：{error}"
-                )
-                folder = DEFAULT_USER_FOLDER
-                username = DEFAULT_USERNAME
-                available = False
+        if default_account is not None:
+            folder = default_account["folder"]
+            username = default_account["username"]
+            available = True
         else:
             folder = DEFAULT_USER_FOLDER
             username = DEFAULT_USERNAME
@@ -93,10 +77,11 @@ class AccountApplication:
         if not book_dir:
             raise ValueError("当前没有打开 Book。")
         clean_username, folder_name = self.user_data_repository.validate_registration_username(username)
-        references, _warnings = self.library_repository.user_references(
-            book_dir, self.user_data_repository.validate_user_folder_reference
-        )
-        if any(item.casefold() == folder_name.casefold() for item in references):
+        accounts, _warnings = self.user_data_repository.list_accounts(book_dir)
+        if any(
+            account["folder"].casefold() == folder_name.casefold()
+            for account in accounts
+        ):
             raise ValueError("该用户名对应的账户已经存在。")
         user_dir = book_dir / "userdata" / folder_name
         if user_dir.exists():
@@ -106,15 +91,6 @@ class AccountApplication:
     def register(self, book_dir, username):
         registration = self.validate_registration(book_dir, username)
         account = self.user_data_repository.create_user(book_dir, registration["username"])
-        try:
-            self.library_repository.add_user_reference(
-                book_dir,
-                account["folder"],
-                self.user_data_repository.validate_user_folder_reference,
-            )
-        except Exception:
-            self.user_data_repository.delete_user(book_dir, account["folder"])
-            raise
         self._reload_accounts(book_dir)
         self._activate(account)
         return account
@@ -135,15 +111,7 @@ class AccountApplication:
         return account
 
     def _reload_accounts(self, book_dir):
-        references, _warnings = self.library_repository.user_references(
-            book_dir, self.user_data_repository.validate_user_folder_reference
-        )
-        accounts = []
-        for folder in references:
-            try:
-                accounts.append(self.user_data_repository.get_account(book_dir, folder))
-            except Exception:
-                continue
+        accounts, _warnings = self.user_data_repository.list_accounts(book_dir)
         self._current_accounts = accounts
 
     def _activate(self, account):

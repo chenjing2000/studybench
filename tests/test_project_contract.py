@@ -138,3 +138,15 @@ def test_vocabulary_scroll_area_has_no_scrollable_blank_tail():
     assert "self.words_layout.addStretch(1)" not in panel
     assert "SetMinAndMaxSize" not in panel
     assert "self.content.adjustSize()" not in panel
+
+def test_book_json_is_marker_only_and_library_picker_has_english_title():
+    repository = read("studybench/data/library_repository.py")
+    tree = read("studybench/program/ui/library_tree.py")
+    left_panel = read("studybench/program/ui/left_panel.py")
+
+    assert 'read_json(book_dir / "book.json")' not in repository
+    assert 'write_json_atomic(book_dir / "book.json"' not in repository
+    assert 'book_dir.name' in repository
+    assert 'book["name"]' in tree
+    assert 'QFileDialog.getExistingDirectory(self, "选择英语图书馆", start_dir)' in left_panel
+

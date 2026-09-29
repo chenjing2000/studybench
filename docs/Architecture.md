@@ -45,7 +45,7 @@ Do not duplicate authoritative current state in the coordinator or UI.
 
 ## 4. Persistence ownership
 
-- `book.json` → `LibraryRepository`
+- `book.json` marker / Book directory → `LibraryRepository`
 - Passage / Exercise JSON → `ArticleRepository`
 - `userdata/<user>/answer_sheet.json` → `UserDataRepository`
 - Vocabulary JSON → `VocabularyIO`
@@ -59,7 +59,7 @@ JSON writes that modify user/application data use atomic replacement where suppo
 
 ### Open Library
 
-`LibraryRepository` scans each Book recursively and derives navigation directly from disk. `book.json` does not contain a Passage index.
+`LibraryRepository` recognizes a direct Library child as a Book when `book.json` exists there. It never opens or validates that marker; the marker's parent-directory name is the Book name. The Book's only user-data location is the sibling `userdata/<user>/` tree in the same Book root, owned by `UserDataRepository`.
 
 The Library is prepared first. Only after a successful load does the application replace the current workspace.
 

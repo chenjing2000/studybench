@@ -55,6 +55,71 @@ class UserDataRepository:
         data = self._read_sheet(book_dir, user_folder)
         return {"folder": user_folder, "username": data["username"]}
 
+    def list_accounts(self, book_dir):
+        """Discover valid accounts directly from userdata/<user>/ folders."""
+        book_dir = Path(book_dir)
+        userdata_dir = book_dir / "userdata"
+        warnings = []
+
+        if not userdata_dir.exists():
+            return [], warnings
+        if not userdata_dir.is_dir():
+            return [], ["userdata 不是文件夹，无法加载账户。"]
+
+        try:
+            entries = sorted(userdata_dir.iterdir(), key=lambda path: path.name.casefold())
+        except Exception as error:
+            return [], [f"userdata 文件夹无法扫描：{error}"]
+
+        accounts = []
+        seen = set()
+        for entry in entries:
+            try:
+                if entry.is_symlink():
+                    continue
+                if not entry.is_dir():
+                    if entry.name == DEFAULT_USER_FOLDER:
+                        warnings.append(
+                            f"默认用户 {DEFAULT_USER_FOLDER} 无法加载：用户路径不是文件夹。"
+                        )
+                    continue
+            except Exception as error:
+                warnings.append(f"无法检查用户目录 {entry.name}：{error}")
+                continue
+
+            folder_name = entry.name
+            try:
+                self.validate_user_folder_reference(folder_name)
+            except Exception as error:
+                warnings.append(f"用户目录 {folder_name} 无法加载：{error}")
+                continue
+
+            key = folder_name.casefold()
+            if key in seen:
+                warnings.append(f"用户目录名大小写冲突：{folder_name}。")
+                continue
+            seen.add(key)
+
+            try:
+                account = self.get_account(book_dir, folder_name)
+            except Exception as error:
+                if folder_name == DEFAULT_USER_FOLDER:
+                    warnings.append(
+                        f"默认用户 {DEFAULT_USER_FOLDER} 无法加载：{error}"
+                    )
+                else:
+                    warnings.append(f"用户 {folder_name} 无法加载：{error}")
+                continue
+            accounts.append(account)
+
+        accounts.sort(
+            key=lambda item: (
+                item["folder"] != DEFAULT_USER_FOLDER,
+                item["folder"].casefold(),
+            )
+        )
+        return accounts, warnings
+
     def create_user(self, book_dir, username):
         clean_username, folder_name = self.validate_registration_username(username)
         user_dir = Path(book_dir) / "userdata" / folder_name

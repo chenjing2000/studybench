@@ -45,7 +45,7 @@ def build_apps():
     library_repo = LibraryRepository(article_repo, user_repo)
     audio = FakeAudioPlayer()
     library = LibraryApplication(library_repo)
-    account = AccountApplication(library_repo, user_repo)
+    account = AccountApplication(user_repo)
     article = ArticleApplication(
         article_repo,
         user_repo,

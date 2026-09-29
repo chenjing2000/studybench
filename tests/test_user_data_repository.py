@@ -32,17 +32,17 @@ def test_answers_use_article_id_and_do_not_collide(tmp_path):
     assert users.load_passage_answer(book, second, DEFAULT_USER_FOLDER)["answers"] == answers_b
 
 
-def test_user_registration_is_split_between_user_file_and_book_reference(tmp_path):
+def test_user_registration_is_discovered_directly_from_userdata(tmp_path):
     _root, book, _passage = make_library(tmp_path)
-    library, users = repositories()
+    _library, users = repositories()
+    users.ensure_default_user(book)
     account = users.create_user(book, "Chen Jing")
 
-    library.add_user_reference(book, account["folder"], users.validate_user_folder_reference)
-
     assert account == {"folder": "chen jing", "username": "Chen Jing"}
-    refs, warnings = library.user_references(book, users.validate_user_folder_reference)
+    accounts, warnings = users.list_accounts(book)
     assert warnings == []
-    assert "chen jing" in refs
+    assert [item["folder"] for item in accounts] == [DEFAULT_USER_FOLDER, "chen jing"]
+    assert (book / "book.json").read_text(encoding="utf-8") == "{}\n"
 
 
 def test_username_validation_reserves_xiaoxin():
@@ -52,9 +52,9 @@ def test_username_validation_reserves_xiaoxin():
         users.validate_registration_username("xiaoxin")
 
 
-def test_userdata_reconciliation_keeps_valid_users_and_never_deletes_invalid_data(tmp_path):
+def test_userdata_scan_keeps_valid_users_and_never_deletes_invalid_data(tmp_path):
     root, book, _passage = make_library(tmp_path)
-    library, _users = repositories()
+    library, users = repositories()
     write_json(
         book / "userdata" / "chen jing" / "answer_sheet.json",
         {"username": "Chen Jing", "answers": {}},
@@ -66,10 +66,12 @@ def test_userdata_reconciliation_keeps_valid_users_and_never_deletes_invalid_dat
 
     _books, warnings = library.load_library(root)
 
-    saved = json.loads((book / "book.json").read_text(encoding="utf-8"))
-    assert saved["userdata"] == [DEFAULT_USER_FOLDER, "chen jing"]
+    assert (book / "book.json").read_text(encoding="utf-8") == "{}\n"
     assert broken.exists()
+    accounts, account_warnings = users.list_accounts(book)
+    assert [item["folder"] for item in accounts] == [DEFAULT_USER_FOLDER, "chen jing"]
     assert any("用户 broken_user 无法加载" in item for item in warnings)
+    assert any("用户 broken_user 无法加载" in item for item in account_warnings)
 
 
 def test_missing_xiaoxin_is_created_but_damaged_xiaoxin_is_not_repaired(tmp_path):
@@ -85,6 +87,5 @@ def test_missing_xiaoxin_is_created_but_damaged_xiaoxin_is_not_repaired(tmp_path
     _books, warnings = library.load_library(root)
 
     assert (xiaoxin / "answer_sheet.json").read_text(encoding="utf-8") == damaged
-    saved = json.loads((book / "book.json").read_text(encoding="utf-8"))
-    assert "xiaoxin" not in saved["userdata"]
+    assert (book / "book.json").read_text(encoding="utf-8") == "{}\n"
     assert any("默认用户 xiaoxin 无法加载" in item for item in warnings)

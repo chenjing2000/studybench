@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 import pytest
@@ -173,17 +172,48 @@ def test_hidden_cache_and_symlink_directories_are_skipped(tmp_path):
     assert names == {"Reading"}
 
 
-def test_book_without_valid_passage_is_omitted_but_userdata_is_reconciled(tmp_path):
+def test_book_json_is_marker_only_and_book_name_comes_from_parent_folder(tmp_path):
+    root, book, _passage = make_library(tmp_path, book_folder="Folder Name")
+    marker = book / "book.json"
+    marker.write_text('this is deliberately not JSON\n', encoding="utf-8")
+
+    books, warnings = load(root)
+
+    assert warnings == []
+    assert books[0]["name"] == "Folder Name"
+    assert books[0]["path"] == str(book)
+    assert marker.read_text(encoding="utf-8") == 'this is deliberately not JSON\n'
+
+
+def test_book_without_valid_passage_is_omitted_but_marker_is_never_rewritten(tmp_path):
     root = tmp_path / "library"
     book = root / "empty_book"
-    write_json(book / "book.json", {"bookname": "Empty", "userdata": []})
+    marker = book / "book.json"
+    marker.parent.mkdir(parents=True)
+    marker.write_text('arbitrary marker contents\n', encoding="utf-8")
 
     books, warnings = load(root)
 
     assert books == []
-    saved = json.loads((book / "book.json").read_text(encoding="utf-8"))
-    assert saved["userdata"] == ["xiaoxin"]
+    assert marker.read_text(encoding="utf-8") == 'arbitrary marker contents\n'
+    assert (book / "userdata" / "xiaoxin" / "answer_sheet.json").is_file()
     assert any("没有可正常加载的 Passage" in item for item in warnings)
+
+
+def test_userdata_is_created_only_beside_book_json_and_other_userdata_is_ignored(tmp_path):
+    root, book, _passage = make_library(tmp_path, book_folder="Local Book")
+    external_userdata = root / "userdata" / "outside_user"
+    write_json(
+        external_userdata / "answer_sheet.json",
+        {"username": "Outside User", "answers": {}},
+    )
+
+    books, warnings = load(root)
+
+    assert warnings == []
+    assert books[0]["name"] == "Local Book"
+    assert (book / "userdata" / "xiaoxin" / "answer_sheet.json").is_file()
+    assert external_userdata.is_dir()
 
 
 def test_bundled_library_can_be_loaded():

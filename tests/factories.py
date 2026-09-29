@@ -74,10 +74,10 @@ def make_article(folder, title="Reading", *, exercise=False, vocabulary=False, b
     return passage
 
 
-def make_library(tmp_path, *, book_folder="book", bookname="Test Book"):
+def make_library(tmp_path, *, book_folder="book"):
     root = Path(tmp_path) / "library"
     book = root / book_folder
-    write_json(book / "book.json", {"bookname": bookname, "userdata": []})
+    write_json(book / "book.json", {})
     passage = make_article(book / "Unit 1", "Reading", exercise=True, vocabulary=True)
     return root, book, passage
 

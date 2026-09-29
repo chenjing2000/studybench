@@ -6,7 +6,7 @@ StudyBench uses native Qt for the application shell and Vocabulary UI, with `QWe
 
 ### Left panel
 
-- `选择图书馆` opens a Library directory.
+- `选择图书馆` opens a directory picker titled `选择英语图书馆`.
 - The recursive tree mirrors Book content folders and Article titles.
 - Book, folder, and Article labels use 10 pt text.
 - Folder/Book nodes are navigation containers; Article leaves open content.

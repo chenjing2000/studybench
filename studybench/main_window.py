@@ -65,9 +65,7 @@ class MainWindow(QMainWindow):
         self.audio_player = AudioPlayback(self)
         self.tts_provider = EdgeTTSProvider()
         self.library_application = LibraryApplication(self.library_repository)
-        self.account_application = AccountApplication(
-            self.library_repository, self.user_data_repository
-        )
+        self.account_application = AccountApplication(self.user_data_repository)
         self.article_application = ArticleApplication(
             self.article_repository,
             self.user_data_repository,

@@ -52,7 +52,7 @@ Library/
 
 Rules:
 
-1. Direct children of the selected Library are Books when they contain `book.json`.
+1. Direct children of the selected Library are Books when they contain a `book.json` file. The file is a marker only and is never opened, parsed, or validated.
 2. Inside a Book, folders may be nested to any depth.
 3. Folder names become navigation-tree folder names.
 4. A normal `<title>.json` is an Article only when `filetype` is `passage`.
@@ -62,8 +62,9 @@ Rules:
    - `<title>.vocabulary.json`
 7. Companion filenames and `filetype` must agree.
 8. One directory may contain any number of Passages.
-9. `book.json` no longer contains or maintains a `passages` index.
-10. Navigation is rebuilt directly from disk whenever a Library is opened.
+9. The Book name is the name of the directory that contains `book.json`.
+10. `userdata/` is valid only beside that `book.json`; no other `userdata/` location is read.
+11. Navigation is rebuilt directly from disk whenever a Library is opened.
 
 A malformed Passage file excludes only that Article. A malformed Exercise or
 Vocabulary file reports a warning but does not invalidate an otherwise valid
@@ -74,21 +75,9 @@ Empty branches are pruned from the navigation tree. `userdata`, hidden folders,
 
 ## `book.json`
 
-```json
-{
-  "bookname": "English Reading",
-  "userdata": [
-    "xiaoxin"
-  ]
-}
-```
+`book.json` is only a Book marker. StudyBench checks only that the file exists; it does not open, parse, validate, normalize, or rewrite its contents. The directory containing `book.json` is the Book root, and that directory name is the displayed Book name.
 
-`bookname` is the displayed Book name. `userdata` stores valid user folder names.
-The system default account folder and username are both `xiaoxin`.
-
-If `xiaoxin` is missing, StudyBench creates it. If an existing `xiaoxin` account
-is damaged, StudyBench reports the problem and never repairs or overwrites it
-automatically.
+A Book's user data is read only from `userdata/` in the same directory as `book.json`. The system default account folder and username are both `xiaoxin`. If `userdata/` or the `xiaoxin` directory is missing, StudyBench creates `userdata/xiaoxin/answer_sheet.json`. If an existing `xiaoxin` account is damaged, StudyBench reports the problem and never repairs or overwrites it automatically.
 
 ## Passage JSON
 

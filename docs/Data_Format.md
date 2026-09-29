@@ -22,25 +22,20 @@ Library/
 
 Rules:
 
-1. A direct Library child is a Book only when it contains `book.json`.
+1. A direct Library child is a Book only when it contains a `book.json` file. `book.json` is a marker only and is never opened, parsed, or validated.
 2. Folder depth below a Book is unrestricted; folder names become navigation nodes.
 3. One folder may contain any number of Passages.
 4. Empty content branches are pruned.
 5. `userdata`, hidden folders, `__pycache__`, and symlinks are skipped while scanning content.
-6. `book.json` has no Passage index; navigation is rebuilt from disk when a Library opens.
+6. The directory containing `book.json` is the Book root, and its directory name is the Book name shown in the navigation tree.
+7. A Book's `userdata/` is read only from that same Book root; `userdata/` anywhere else is ignored.
+8. Navigation is rebuilt from disk when a Library opens.
 
 ## 2. `book.json`
 
-```json
-{
-  "bookname": "English Reading",
-  "userdata": ["xiaoxin"]
-}
-```
+`book.json` has marker semantics only. Its contents are unrestricted from StudyBench's point of view because the application never opens or validates the file. The parent directory name is the authoritative Book name.
 
-`bookname` is the displayed Book name. `userdata` stores valid user-folder names.
-
-The default account folder and username are both `xiaoxin`. If its directory is completely absent, StudyBench creates it. Existing damaged user data is reported, not silently repaired or overwritten.
+The only user-data location for that Book is the sibling `userdata/` directory in the same Book root. The default account folder and username are both `xiaoxin`. If `userdata/` or `userdata/xiaoxin/` is absent, StudyBench creates the default account. Existing damaged user data is reported, not silently repaired or overwritten.
 
 ## 3. Passage
 

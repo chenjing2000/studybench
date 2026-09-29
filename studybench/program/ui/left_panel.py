@@ -103,7 +103,7 @@ class LeftPanel(QWidget):
         if not start_dir:
             candidate = self.project_root / "library_en"
             start_dir = str(candidate if candidate.exists() else self.project_root)
-        selected = QFileDialog.getExistingDirectory(self, "选择英语 Library 文件夹", start_dir)
+        selected = QFileDialog.getExistingDirectory(self, "选择英语图书馆", start_dir)
         if selected:
             self.library_folder_selected.emit(str(Path(selected)))
 
