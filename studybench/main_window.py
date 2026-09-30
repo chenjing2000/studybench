@@ -196,15 +196,15 @@ class MainWindow(QMainWindow):
         if isinstance(saved, str) and saved:
             saved_path = Path(saved)
             if saved_path.exists() and saved_path.is_dir():
-                self._load_library_now(saved_path)
+                self._load_library_now(saved_path, open_first=False)
             else:
                 self.show_status(f"上次使用的 Library 不存在：{saved}")
             return
         sample_library = self.project_root / "library_en"
         if sample_library.exists() and sample_library.is_dir():
-            self._load_library_now(sample_library)
+            self._load_library_now(sample_library, open_first=False)
 
-    def _load_library_now(self, library_dir):
+    def _load_library_now(self, library_dir, *, open_first=True):
         self.status_timer.stop()
         self.status_queue.clear()
         self.statusBar().clearMessage()
@@ -217,11 +217,11 @@ class MainWindow(QMainWindow):
         self._clear_workspace_ui()
         self.saved_settings["last_library_dir"] = str(self.library_application.current_library)
         self.left_panel.set_library_dir(self.library_application.current_library)
-        first_item = self.left_panel.set_library(update.books)
+        first_item = self.left_panel.set_library(update.books, open_first=open_first)
         self._refresh_account_controls()
-        if first_item is not None:
+        if open_first and first_item is not None:
             self.left_panel.emit_passage_for_item(first_item)
-        elif not update.messages:
+        elif first_item is None and not update.messages:
             self.show_status("当前文件夹中没有可加载的 Book。")
         self._queue_status_messages(update.messages)
 
@@ -661,9 +661,16 @@ class MainWindow(QMainWindow):
             job_kind == VOCABULARY_AUDIO_JOB
             and self._same_path(self.library_application.current_passage_path, passage_path)
         ):
+            scroll_bar = self.vocabulary_panel.scroll.verticalScrollBar()
+            scroll_maximum = scroll_bar.maximum()
+            scroll_ratio = scroll_bar.value() / scroll_maximum if scroll_maximum > 0 else 0.0
             try:
                 self.vocabulary_application.reload(self.library_application.current_passage_path)
                 self._refresh_vocabulary_view()
+                QTimer.singleShot(
+                    0,
+                    lambda: scroll_bar.setValue(round(scroll_ratio * scroll_bar.maximum())),
+                )
             except Exception as error:
                 self.show_status(f"Vocabulary 刷新失败：{error}")
         self._set_audio_job_buttons_enabled(True)

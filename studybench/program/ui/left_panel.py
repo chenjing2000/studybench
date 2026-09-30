@@ -110,8 +110,8 @@ class LeftPanel(QWidget):
     def set_library_dir(self, path):
         self.library_dir = str(path or "")
 
-    def set_library(self, books):
-        return self.library_tree.set_library(books)
+    def set_library(self, books, *, open_first=True):
+        return self.library_tree.set_library(books, open_first=open_first)
 
     def clear_library(self):
         self.library_tree.clear()

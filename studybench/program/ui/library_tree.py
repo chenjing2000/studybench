@@ -21,6 +21,7 @@ class LibraryTree(QTreeWidget):
         tree_font.setPointSize(10)
         self.setFont(tree_font)
         self.itemClicked.connect(self._item_clicked)
+        self.itemCollapsed.connect(self._item_collapsed)
 
         plus = resource_path("tree/plus.svg").as_posix()
         minus = resource_path("tree/minus.svg").as_posix()
@@ -33,7 +34,7 @@ class LibraryTree(QTreeWidget):
             "QTreeWidget::item:selected { background: #e0e0d0; color: #1f1f1f; border: 0; outline: 0; }"
         )
 
-    def set_library(self, books):
+    def set_library(self, books, *, open_first=True):
         self.clear()
         first_article_item = None
         for book in books:
@@ -53,10 +54,12 @@ class LibraryTree(QTreeWidget):
                 item, first_found = self._add_node(book_item, node)
                 if first_article_item is None and first_found is not None:
                     first_article_item = first_found
-            book_item.setExpanded(True)
+            book_item.setExpanded(bool(open_first))
 
-        if first_article_item is not None:
+        if open_first and first_article_item is not None:
             self.setCurrentItem(first_article_item)
+        else:
+            self.collapseAll()
         return first_article_item
 
     def _add_node(self, parent_item, node):
@@ -118,3 +121,16 @@ class LibraryTree(QTreeWidget):
 
     def _item_clicked(self, item, column):
         self.emit_passage_for_item(item)
+
+    def _item_collapsed(self, item):
+        signals_were_blocked = self.blockSignals(True)
+        try:
+            self._collapse_descendants(item)
+        finally:
+            self.blockSignals(signals_were_blocked)
+
+    def _collapse_descendants(self, item):
+        for index in range(item.childCount()):
+            child = item.child(index)
+            child.setExpanded(False)
+            self._collapse_descendants(child)
