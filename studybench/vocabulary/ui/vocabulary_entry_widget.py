@@ -83,7 +83,6 @@ class VocabularyEntryWidget(QWidget):
 
         self.setObjectName("vocabularyEntry")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setMinimumWidth(0)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         background = str(self._row.get("background") or "#FFFFFF")
         self.setStyleSheet(

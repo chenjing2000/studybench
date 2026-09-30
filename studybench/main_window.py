@@ -474,9 +474,15 @@ class MainWindow(QMainWindow):
         self._update_vocabulary_highlights()
 
     def add_vocabulary_word(self, selected_word):
+        scroll_bar = self.vocabulary_panel.scroll.verticalScrollBar()
+        scroll_value = scroll_bar.value()
         try:
             cell = self.workspace.add_selected_word(selected_word)
             self._refresh_vocabulary_view()
+            QTimer.singleShot(
+                0,
+                lambda: scroll_bar.setValue(min(scroll_value, scroll_bar.maximum())),
+            )
             self.show_status(f"已添加 {cell.word.word}")
         except Exception as error:
             self._reload_vocabulary_after_failure()

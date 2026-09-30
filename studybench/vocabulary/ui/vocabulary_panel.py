@@ -15,6 +15,7 @@ from .vocabulary_entry_widget import VocabularyEntryWidget
 
 
 SIDEBAR_BUTTON_HEIGHT = 30
+MIN_VOCABULARY_VIEWPORT_WIDTH = 100
 
 
 class VocabularyPanel(QWidget):
@@ -81,7 +82,6 @@ class VocabularyPanel(QWidget):
         outer.addWidget(self.scroll, 1)
 
         self.content = QWidget()
-        self.content.setMinimumWidth(0)
         self.content.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.words_layout = QVBoxLayout(self.content)
         self.words_layout.setContentsMargins(0, 0, 0, 0)
@@ -134,8 +134,9 @@ class VocabularyPanel(QWidget):
             widget.move_requested.connect(self.move_requested.emit)
             widget.delete_requested.connect(self.delete_requested.emit)
             self.words_layout.addWidget(widget)
+        self._sync_minimum_width()
         self._sync_content_height()
-        QTimer.singleShot(0, self._sync_content_height)
+        QTimer.singleShot(0, self._sync_after_rows_changed)
         self._refresh_footer_buttons()
 
     def set_audio_generation_enabled(self, enabled):
@@ -154,6 +155,33 @@ class VocabularyPanel(QWidget):
             if widget is not None:
                 widget.deleteLater()
         self.content.setFixedHeight(0)
+
+    def _sync_after_rows_changed(self):
+        self._sync_minimum_width()
+        self._sync_content_height()
+
+    def _sync_minimum_width(self):
+        """Keep the scroll viewport wide enough for the current preferred content."""
+        self.words_layout.invalidate()
+        self.words_layout.activate()
+
+        preferred_content_width = max(0, self.content.sizeHint().width())
+        viewport_min_width = max(
+            MIN_VOCABULARY_VIEWPORT_WIDTH,
+            preferred_content_width,
+        )
+
+        scrollbar_width = self.scroll.verticalScrollBar().sizeHint().width()
+        scroll_frame_width = self.scroll.frameWidth() * 2
+        margins = self.layout().contentsMargins()
+        panel_min_width = (
+            viewport_min_width
+            + scrollbar_width
+            + scroll_frame_width
+            + margins.left()
+            + margins.right()
+        )
+        self.setMinimumWidth(panel_min_width)
 
     def _sync_content_height(self):
         """Match the scroll widget height to the rows at the current viewport width."""
