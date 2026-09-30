@@ -475,13 +475,14 @@ class MainWindow(QMainWindow):
 
     def add_vocabulary_word(self, selected_word):
         scroll_bar = self.vocabulary_panel.scroll.verticalScrollBar()
-        scroll_value = scroll_bar.value()
+        scroll_maximum = scroll_bar.maximum()
+        scroll_ratio = scroll_bar.value() / scroll_maximum if scroll_maximum > 0 else 0.0
         try:
             cell = self.workspace.add_selected_word(selected_word)
             self._refresh_vocabulary_view()
             QTimer.singleShot(
                 0,
-                lambda: scroll_bar.setValue(min(scroll_value, scroll_bar.maximum())),
+                lambda: scroll_bar.setValue(round(scroll_ratio * scroll_bar.maximum())),
             )
             self.show_status(f"已添加 {cell.word.word}")
         except Exception as error:
@@ -509,11 +510,18 @@ class MainWindow(QMainWindow):
             self.show_status(f"移动 Vocabulary 失败：{error}")
 
     def delete_vocabulary_word(self, word):
+        scroll_bar = self.vocabulary_panel.scroll.verticalScrollBar()
+        scroll_maximum = scroll_bar.maximum()
+        scroll_ratio = scroll_bar.value() / scroll_maximum if scroll_maximum > 0 else 0.0
         try:
             deleted = self.vocabulary_application.delete_word(
                 self.library_application.current_passage_path, str(word).strip()
             )
             self._refresh_vocabulary_view()
+            QTimer.singleShot(
+                0,
+                lambda: scroll_bar.setValue(round(scroll_ratio * scroll_bar.maximum())),
+            )
             write_log(
                 self.library_application.current_passage_path,
                 "INFO",
