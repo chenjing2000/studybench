@@ -120,6 +120,20 @@ class VocabularyPanel(QWidget):
         self._refresh_footer_buttons()
 
     def set_rows(self, rows):
+        self._replace_rows(rows)
+        QTimer.singleShot(0, self._sync_after_rows_changed)
+
+    def set_rows_preserving_scroll(self, rows):
+        scroll_bar = self.scroll.verticalScrollBar()
+        scroll_maximum = scroll_bar.maximum()
+        scroll_ratio = scroll_bar.value() / scroll_maximum if scroll_maximum > 0 else 0.0
+        self._replace_rows(rows)
+        QTimer.singleShot(
+            0,
+            lambda: self._sync_after_rows_changed_preserving_scroll(scroll_ratio),
+        )
+
+    def _replace_rows(self, rows):
         self._clear_words()
         self.current_word_count = len(rows)
         for row in rows:
@@ -136,7 +150,6 @@ class VocabularyPanel(QWidget):
             self.words_layout.addWidget(widget)
         self._sync_minimum_width()
         self._sync_content_height()
-        QTimer.singleShot(0, self._sync_after_rows_changed)
         self._refresh_footer_buttons()
 
     def set_audio_generation_enabled(self, enabled):
@@ -159,6 +172,11 @@ class VocabularyPanel(QWidget):
     def _sync_after_rows_changed(self):
         self._sync_minimum_width()
         self._sync_content_height()
+
+    def _sync_after_rows_changed_preserving_scroll(self, scroll_ratio):
+        self._sync_after_rows_changed()
+        scroll_bar = self.scroll.verticalScrollBar()
+        scroll_bar.setValue(round(scroll_ratio * scroll_bar.maximum()))
 
     def _sync_minimum_width(self):
         """Keep the scroll viewport wide enough for the current preferred content."""

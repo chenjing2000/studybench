@@ -473,17 +473,20 @@ class MainWindow(QMainWindow):
         self.vocabulary_panel.set_rows(rows)
         self._update_vocabulary_highlights()
 
+    def _refresh_vocabulary_view_preserving_scroll(self):
+        rows = self.vocabulary_presenter.build_list_payload(
+            self.vocabulary_application.snapshot(),
+            word_color="#3271ae",
+            even_background="#FFFFFF",
+            odd_background="#F5F6F2",
+        )
+        self.vocabulary_panel.set_rows_preserving_scroll(rows)
+        self._update_vocabulary_highlights()
+
     def add_vocabulary_word(self, selected_word):
-        scroll_bar = self.vocabulary_panel.scroll.verticalScrollBar()
-        scroll_maximum = scroll_bar.maximum()
-        scroll_ratio = scroll_bar.value() / scroll_maximum if scroll_maximum > 0 else 0.0
         try:
             cell = self.workspace.add_selected_word(selected_word)
-            self._refresh_vocabulary_view()
-            QTimer.singleShot(
-                0,
-                lambda: scroll_bar.setValue(round(scroll_ratio * scroll_bar.maximum())),
-            )
+            self._refresh_vocabulary_view_preserving_scroll()
             self.show_status(f"已添加 {cell.word.word}")
         except Exception as error:
             self._reload_vocabulary_after_failure()
@@ -499,7 +502,7 @@ class MainWindow(QMainWindow):
             if not changed:
                 self.show_status("Vocabulary word 已经位于可移动边界。")
                 return
-            self._refresh_vocabulary_view()
+            self._refresh_vocabulary_view_preserving_scroll()
             write_log(
                 self.library_application.current_passage_path,
                 "INFO",
@@ -510,18 +513,11 @@ class MainWindow(QMainWindow):
             self.show_status(f"移动 Vocabulary 失败：{error}")
 
     def delete_vocabulary_word(self, word):
-        scroll_bar = self.vocabulary_panel.scroll.verticalScrollBar()
-        scroll_maximum = scroll_bar.maximum()
-        scroll_ratio = scroll_bar.value() / scroll_maximum if scroll_maximum > 0 else 0.0
         try:
             deleted = self.vocabulary_application.delete_word(
                 self.library_application.current_passage_path, str(word).strip()
             )
-            self._refresh_vocabulary_view()
-            QTimer.singleShot(
-                0,
-                lambda: scroll_bar.setValue(round(scroll_ratio * scroll_bar.maximum())),
-            )
+            self._refresh_vocabulary_view_preserving_scroll()
             write_log(
                 self.library_application.current_passage_path,
                 "INFO",
@@ -661,16 +657,9 @@ class MainWindow(QMainWindow):
             job_kind == VOCABULARY_AUDIO_JOB
             and self._same_path(self.library_application.current_passage_path, passage_path)
         ):
-            scroll_bar = self.vocabulary_panel.scroll.verticalScrollBar()
-            scroll_maximum = scroll_bar.maximum()
-            scroll_ratio = scroll_bar.value() / scroll_maximum if scroll_maximum > 0 else 0.0
             try:
                 self.vocabulary_application.reload(self.library_application.current_passage_path)
-                self._refresh_vocabulary_view()
-                QTimer.singleShot(
-                    0,
-                    lambda: scroll_bar.setValue(round(scroll_ratio * scroll_bar.maximum())),
-                )
+                self._refresh_vocabulary_view_preserving_scroll()
             except Exception as error:
                 self.show_status(f"Vocabulary 刷新失败：{error}")
         self._set_audio_job_buttons_enabled(True)
